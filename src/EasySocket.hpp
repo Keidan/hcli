@@ -11,21 +11,11 @@
 
 #include <exception>
 #include <string>
-#include <openssl/opensslconf.h>
-#include <openssl/ssl.h>  
+#include <openssl/ssl.h>
+#include <openssl/bio.h> 
 
 
 namespace net {
-
-  enum class EasySocketResult: unsigned char {
-    OK, 
-    ERROR_SOCKET, 
-    ERROR_RESOLV_HOST, 
-    ERROR_CONNECT, 
-    ERROR_SSL_CTX_NEW, 
-    ERROR_SSL_NEW, 
-    ERROR_SSL_CONNECT
-  };
 
   class EasySocketException: public std::exception {
     public:
@@ -65,7 +55,7 @@ namespace net {
        * @param port The remote port.
        * @return EasySocketResult
        */
-      auto connect(std::string host, int port) -> EasySocketResult;
+      auto connect(std::string host, int port) -> void;
 
       /**
        * @brief Close the socket with the remote address.
@@ -74,9 +64,9 @@ namespace net {
 
       /**
        * @brief Change the SSL status.
-       * @param ssl SSL status.
+       * @param useSSL SSL status.
        */
-      auto ssl(int ssl) -> void;
+      auto ssl(int useSSL) -> void;
 
       /**
        * @brief Get The SSL status.
@@ -130,11 +120,11 @@ namespace net {
 
     private:
       int _fd;
-      bool _ssl;
-      bool _rEnd;
+      bool _useSSL;
       bool _open;
-      SSL_CTX *_lib_ssl_ctx;
-      SSL     *_lib_ssl;
+      BIO *_bio;
+      SSL_CTX *_ctx;
+      SSL     *_ssl;
       static unsigned long _lib_ssl_errno;
   };
 

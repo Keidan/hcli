@@ -7,10 +7,10 @@
 *******************************************************************************
 */
 #include "EasySocket.hpp" 
-#include <openssl/evp.h> 
-#include <openssl/err.h>
+#include <sstream>  
+#include <openssl/err.h> 
 #include <unistd.h>
-#include <sys/types.h>          /* See NOTES */
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <fcntl.h>
@@ -18,7 +18,23 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <iostream>
 
+#define throw_libc(m) do {				\
+    std::string msg = m;				\
+    msg += "[[" + std::to_string(__LINE__) + "]] ";	\
+    msg += strerror(errno);				\
+    throw EasySocketException(msg);			\
+  } while(0)
+
+#define throw_ssl0(m, i) do {				\
+    std::string msg = m;				\
+    msg += "[[" + std::to_string(__LINE__) + "]] ";	\
+    _lib_ssl_errno = i;					\
+    msg += lastErrorSSL();				\
+    throw EasySocketException(msg);			\
+  } while(0)
+#define throw_ssl(m) throw_ssl0(m, ERR_get_error())
 
 /**
  * @fn static int easy_socket_dumb_callback(int preverify_ok, X509_STORE_CTX *ctx)
@@ -34,9 +50,9 @@ static int easy_socket_dumb_callback(int preverify_ok, X509_STORE_CTX *ctx) {
 }
 
 namespace net {
-
-  constexpr unsigned int BUF_SZ = 1024;
   unsigned long EasySocket::_lib_ssl_errno = 0L;
+  constexpr unsigned short PORT_HTTP       = 80;
+  constexpr unsigned short PORT_HTTPS      = 443;
 
   /**
    * @brief Initialize the SSL stack, should be called only once in your application.
@@ -47,11 +63,8 @@ namespace net {
     ERR_load_BIO_strings();
     ERR_load_crypto_strings();
     SSL_load_error_strings();
-    _lib_ssl_errno = ERR_get_error();
-    if(SSL_library_init() < 0) {
-      _lib_ssl_errno = ERR_get_error();
+    if(SSL_library_init() < 0)
       return false;
-    }
     return true;
   }
 
@@ -70,7 +83,7 @@ namespace net {
     return std::string(ERR_error_string(_lib_ssl_errno, NULL));
   }
 
-  EasySocket::EasySocket() : _fd(-1), _ssl(false), _rEnd(false), _open(false), _lib_ssl_ctx(nullptr), _lib_ssl(nullptr) {
+  EasySocket::EasySocket() : _fd(-1), _useSSL(false), _open(false), _bio(nullptr), _ctx(nullptr), _ssl(nullptr) {
   }
 
   EasySocket::~EasySocket() {
@@ -81,35 +94,38 @@ namespace net {
    * @brief Close the socket with the remote address.
    */
   auto EasySocket::disconnect() -> void {
-    if(_lib_ssl != nullptr) {
-      SSL_shutdown(_lib_ssl);
-      SSL_free(_lib_ssl);
-      _lib_ssl = nullptr;
+    if(_bio != nullptr) {
+      BIO_free_all(_bio); 
+      _bio = nullptr;
     }
-    if(_lib_ssl_ctx != nullptr) {
-      SSL_CTX_free(_lib_ssl_ctx);
-      _lib_ssl_ctx = nullptr;
+    if(_ctx != nullptr) {
+      SSL_CTX_free(_ctx);   
+      _ctx = nullptr;
+    }
+    if(_ssl != nullptr) {
+      SSL_free(_ssl); 
+      _ssl = nullptr;
     }
     if(_fd != -1) close(_fd);
     _open = false;
   }
-
   /**
    * @brief Connect the socket to the remote address.
    * @param host The remote address.
    * @param port The remote port.
    * @return EasySocketResult
    */
-  auto EasySocket::connect(std::string host, int port) -> EasySocketResult { 
+  auto EasySocket::connect(std::string host, int port) -> void { 
     _open = false;
+
     if ((_fd = ::socket(AF_INET, SOCK_STREAM, 0)) < 0)
-      return EasySocketResult::ERROR_SOCKET;
+      throw_libc("Cannot create socket: ");
 
     struct hostent *remoteh;
     /* Look up the remote host to get its network number. */
     if ((remoteh = ::gethostbyname(host.c_str())) == NULL) {
       disconnect();
-      return EasySocketResult::ERROR_RESOLV_HOST;
+      throw_libc("Cannot resolv host: ");
     }
 
     struct sockaddr_in address;
@@ -119,47 +135,51 @@ namespace net {
     address.sin_port = htons(port);
     if (!(::connect(_fd, (struct sockaddr *)(&address), sizeof(address)) >= 0)) {
       disconnect();
-      return EasySocketResult::ERROR_CONNECT;
+      throw_libc("Cannot connect: ");
+    }
+    if(!_useSSL) {
+      _open = true;
+      return;
     }
 
-    if(!_ssl) {
-      _open = true;
-      return EasySocketResult::OK;
-    }
     /* We first need to establish what sort of */
     /* connection we know how to make. We can use one of */
     /* SSLv23_client_method(), SSLv2_client_method() and */
     /* SSLv3_client_method(). */
     /*  Try to create a new SSL context. */
-    if(( _lib_ssl_ctx = SSL_CTX_new(SSLv23_client_method())) == nullptr) {
+    if(( _ctx = SSL_CTX_new(SSLv23_client_method())) == nullptr) {
       _lib_ssl_errno = ERR_get_error();
       disconnect();
-      return EasySocketResult::ERROR_SSL_CTX_NEW;
+      throw_ssl("SSL Error: ");
     }
+    SSL_CTX_set_mode(_ctx, SSL_MODE_AUTO_RETRY);
 
     /* Set it up so tha we will connect to *any* site, regardless of their certificate. */
-    SSL_CTX_set_verify(_lib_ssl_ctx, SSL_VERIFY_NONE, easy_socket_dumb_callback);
+    SSL_CTX_set_verify(_ctx, SSL_VERIFY_NONE, easy_socket_dumb_callback);
     /* Enable bug support hacks. */
-    SSL_CTX_set_options(_lib_ssl_ctx, SSL_OP_ALL);
+    SSL_CTX_set_options(_ctx, SSL_OP_ALL);
 
-    /* Create new SSL connection state object. */
-    _lib_ssl = SSL_new(_lib_ssl_ctx);
-    if(_lib_ssl == nullptr) {
+
+    if ((_ssl = SSL_new(_ctx)) == NULL) {
       _lib_ssl_errno = ERR_get_error();
       disconnect();
-      return EasySocketResult::ERROR_SSL_NEW;
+      throw_ssl("SSL Error: ");
     }
-  
-    /* Attach the SSL session. */
-    SSL_set_fd(_lib_ssl, _fd);
-    /* Connect using the SSL session. */
-    if(SSL_connect(_lib_ssl) != 1) {
-      _lib_ssl_errno = ERR_PACK(ERR_LIB_SYS, SYS_F_CONNECT, ERR_R_SYS_LIB);
+    SSL_set_mode(_ssl, SSL_MODE_AUTO_RETRY); 
+
+    if (SSL_set_fd(_ssl, _fd) == 0) {
+      _lib_ssl_errno = ERR_get_error();
       disconnect();
-      return EasySocketResult::ERROR_SSL_CONNECT;
+      throw_ssl("SSL Error: ");
     }
+    if (SSL_connect(_ssl) == -1) {
+      _lib_ssl_errno = ERR_get_error();
+      disconnect();
+      throw_ssl("SSL Error: ");
+    }
+    
+
     _open = true;
-    return EasySocketResult::OK;
   }
 
 
@@ -168,19 +188,28 @@ namespace net {
    * @param toWrite The data to write.
    */
   auto EasySocket::write(const std::string toWrite) -> void {
-    int w;
-    if(_ssl)
-      w = SSL_write(_lib_ssl, toWrite.c_str(), toWrite.length());
-    else
-      w = ::write(_fd, toWrite.c_str(), toWrite.length());
-    if(w < 0 || (_ssl && w == 0)) {
-      std::string msg = "Write error (" + std::to_string(w) + "): ";
-      if(_ssl) {
-	_lib_ssl_errno = ERR_get_error();
-	//msg += lastErrorSSL();
-      } else
-	msg += strerror(errno);
-      throw EasySocketException(msg);
+    if(_useSSL) {
+      for (;;) {
+	int rc1 = SSL_write(_ssl, toWrite.c_str(), toWrite.length());
+	int rc2 = SSL_get_error(_ssl, rc1);
+	switch (rc2) {
+	  case SSL_ERROR_NONE:
+	  case SSL_ERROR_ZERO_RETURN:
+	    return;
+	  case SSL_ERROR_WANT_READ:
+	  case SSL_ERROR_WANT_WRITE: {
+	    throw_ssl("Want write error (" + std::to_string(rc1) + "): ");
+	    break;
+	  }
+	  default:
+	    throw_ssl("SSL Write error (" + std::to_string(rc1) + "): ");
+	}
+      }
+    }
+    else {
+      int w = ::write(_fd, toWrite.c_str(), toWrite.length());
+      if(w < 0)
+	throw_libc("Write error (" + std::to_string(w) + "): ");
     }
   }
 
@@ -189,36 +218,53 @@ namespace net {
    * @param toRead The data reads.
    */
   auto EasySocket::read(std::string &toRead) -> void {
-    _rEnd = false;
-    int r;
-    char buffer[BUF_SZ];
-    if(_ssl) {
-      if((r = SSL_read(_lib_ssl, buffer, BUF_SZ)) <= 0)
-	_rEnd = true;
+    char buffer[1024];
+    std::ostringstream oss;
+    bool leave = false;
+    if(_useSSL) {
+      for(;;) {
+	bzero(buffer, 1024);
+	int rc1 = SSL_read(_ssl, buffer, 1023);
+	int rc2 = SSL_get_error(_ssl, rc1);
+	if(rc1 > 0) oss << buffer;
+	switch (rc2) {
+	  case SSL_ERROR_SYSCALL:
+	    if(rc1) {
+	      throw_ssl("Read read error (" + std::to_string(rc2) + "): ");
+	    }
+	  case SSL_ERROR_NONE:
+	  case SSL_ERROR_ZERO_RETURN:
+	    leave = true;
+	    break;
+	  case SSL_ERROR_WANT_READ:
+	  case SSL_ERROR_WANT_WRITE: {
+	    throw_ssl("Want read error (" + std::to_string(rc2) + "): ");
+	    break;
+	  }
+	  default: {
+	    throw_ssl("SSL read error (" + std::to_string(rc2) + "): ");
+	    break;
+	  }
+	}
+	if(leave) break;
+      }
     } else {
-      if((r = ::read(_fd, buffer, BUF_SZ)) <= 0)
-	_rEnd = true;
+      int reads = ::read(_fd, buffer, 1023);
+      if(reads < 0) {
+	throw_libc("Read error (" + std::to_string(reads) + "): ");
+      }
+      buffer[reads] = 0;
+      oss << buffer;
     }
-    if(r < 0) {
-      std::string msg = "Read error (" + std::to_string(r) + "): ";
-      if(_ssl) {
-	_lib_ssl_errno = ERR_get_error();
-	msg += lastErrorSSL();
-      } else
-	msg += strerror(errno);
-      throw EasySocketException(msg);
-    } else {
-      toRead = buffer;
-      if(r < ((int)BUF_SZ)) _rEnd = true;
-    }
+    toRead = oss.str();
   }
 
   /**
    * @brief Change the SSL status.
-   * @param ssl SSL status.
+   * @param useSSL SSL status.
    */
-  auto EasySocket::ssl(int ssl) -> void {
-    if(!_open) _ssl = ssl;
+  auto EasySocket::ssl(int useSSL) -> void {
+    if(!_open) _useSSL = useSSL;
   }
 
   /**
@@ -226,7 +272,7 @@ namespace net {
    * @return bool
    */
   auto EasySocket::ssl() -> bool {
-    return _ssl;
+    return _useSSL;
   }
 
   /**
@@ -235,14 +281,6 @@ namespace net {
    */
   auto EasySocket::fd() -> int {
     return _fd;
-  }
-
-  /**
-   * @brief Test if EOF is reached.
-   * @return bool
-   */
-  auto EasySocket::isEOF() -> bool {
-    return _rEnd && _open;
   }
 
 } /* namespace net */
