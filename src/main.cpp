@@ -67,9 +67,9 @@ auto usage(int err) -> void {
   cout << "\t--ssl, -s: Use SSL." << endl;
   cout << "\t--gzip, -g: Use Accept-Encoding: gzip " << endl;
   cout << "\t--method, -m: HTTP method." << endl;
-  cout << "\t--header: Add new header to the query (format key:value)" << endl;
+  cout << "\t--header: Add new header to the query (format key=value)" << endl;
   cout << "\t--cookie: Add new cookie to the query (format value)" << endl;
-  cout << "\t--param: Add new param to the query (format key:value)" << endl;
+  cout << "\t--param: Add new param to the query (format key=value)" << endl;
   exit(err);
 }
 
@@ -137,9 +137,9 @@ int  main(int argc, char** argv) {
       case 'm': method = string(optarg); break;
       case '1': {
 	string s(optarg);
-	size_t found = s.find(":");
+	size_t found = s.find("=");
 	if(found == string::npos) {
-	  cerr << "Invalid header format (key:value): " << optarg << endl;
+	  cerr << "Invalid header format (key=value): " << optarg << endl;
 	  exit(1);
 	}
 	headers[s.substr(0, found)] = s.substr(found + 1);
@@ -148,9 +148,9 @@ int  main(int argc, char** argv) {
       case '2': cookies.push_back(string(optarg)); break;
       case '3': {
 	string s(optarg);
-	size_t found = s.find(":");
+	size_t found = s.find("=");
 	if(found == string::npos) {
-	  cerr << "Invalid param format (key:value): " << optarg << endl;
+	  cerr << "Invalid param format (key=value): " << optarg << endl;
 	  exit(1);
 	}
 	params[s.substr(0, found)] = s.substr(found + 1);
