@@ -170,7 +170,7 @@ namespace net {
       if(_host.empty()) {
 	throw HttpClientException("Unable to start the client without host!");
       }
- 
+      _socket.ssl(ssl);
       /* decode the host value */
       _port = !_socket.ssl() ? 80 : 443;
       _page = "/";
