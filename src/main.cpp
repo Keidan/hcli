@@ -187,8 +187,8 @@ int  main(int argc, char** argv) {
       }
     }
     cout << "Body length:" << plain.length() << endl;
-
-    cout << "=====" << plain << "=====" << endl;
+    if(!plain.empty())
+      cout << "=====" << plain << "=====" << endl;
     //print_hex(stdout, (unsigned char*)plain.c_str(), plain.length(), true);
     //cout << endl << endl;
   } catch (std::exception& e)  {
