@@ -8,7 +8,7 @@ DEBUG_FLAGS 	:= -g -O0
 # Compiler
 CXXFLAGS 	:= $(DEBUG_FLAGS) $(FLAGS)
 # Linker
-LDFLAGS 	:= -lssl -lcrypto
+LDFLAGS 	:= -lssl -lcrypto -lz
 
 srcfiles	:= $(shell find . -name "*.cpp" -type f)
 objfiles	:= $(patsubst %.cpp, %.o, $(srcfiles))
