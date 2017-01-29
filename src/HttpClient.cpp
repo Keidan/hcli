@@ -132,22 +132,37 @@ namespace net {
      * @return The query.
      */
     auto HttpClient::makeQuery() -> string {
+      string h = _host;
+      if(h.back() != '/') h += "/";
       string output = _method + " " + _page;
       if(_method == "GET") output += _sparams;
       output += " HTTP/1.1\r\n";
-      output += "Host: " + _host + "\r\n";
-      output += "User-Agent: " + _appname + "\r\n";
-      output += "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
-      output += "Accept-Language: q=0.8,en-US;q=0.5,en;q=0.3\r\n";
-      for(map<string, string>::const_iterator it = _headers.begin(); it != _headers.end(); ++it)
+      if(_headers.find("Host") == _headers.end())
+	output += "Host: " + h + "\r\n";
+      if(_headers.find("User-Agent") == _headers.end())
+	output += "User-Agent: " + _appname + "\r\n";
+      if(_headers.find("Accept") == _headers.end())
+	output += "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
+      if(_headers.find("Accept-Language") == _headers.end())
+	output += "Accept-Language: q=0.8,en-US;q=0.5,en;q=0.3\r\n";
+      for(map<string, string>::const_iterator it = _headers.begin(); it != _headers.end(); ++it) {
 	output += it->first + ": " + it->second + "\r\n";
+	if(it->first == "Accept-Encoding" && it->second.find("gzip") != string::npos && !_gzip)
+	  _gzip = true;
+      }
       for(vector<string>::const_iterator it = _cookies.begin(); it != _cookies.end(); ++it)
 	output += "Cookie: " + (*it) + "\r\n";
-      if(_gzip)
+      if(_gzip && _headers.find("Accept-Encoding") == _headers.end())
 	output += "Accept-Encoding: gzip, deflate\r\n";
-      output += "Connection: close\r\n\r\n";
-      if(_method != "GET" && !_sparams.empty())
-	output += (_gzip ? deflate(_sparams) : _sparams) + "\r\n";
+      if(_headers.find("Connection") == _headers.end())
+	output += "Connection: close\r\n";
+      if(!_sparams.empty() && !(_method == "GET")) {
+	string sp = _sparams;
+	if(_headers.find("Content-Length") == _headers.end())
+	  output += "Content-Length: " + std::to_string(sp.length()) + "\r\n\r\n";
+	output += (_gzip ? deflate(sp) : sp) + "\r\n";
+      }
+      output += "\r\n";
       return output;
     }
 
@@ -198,6 +213,7 @@ namespace net {
       else
 	cout << "Send query: " << _method << " " << _page << (_sparams.empty() ? "" : " whith content " + _sparams) << " to host " << _host << " and port " << _port << endl;
     
+      cout << "Use location: http" << (!ssl ? "://" : "s://") << host << ((_method == "GET") && !_sparams.empty() ? _sparams : "") << endl; 
       _socket.connect(_host, _port);
       /* Send the request */
       string output = makeQuery();
