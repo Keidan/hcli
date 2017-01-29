@@ -264,7 +264,8 @@ namespace net {
 	    }
 	  }
 	} while(chunk && !_gzip);
-      }
+      } else
+	oss << readdata;
       /* test support of gzip content */
       _plain = oss.str();
       if(_hdr.equals("Content-Encoding", "gzip")) {
