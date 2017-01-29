@@ -154,17 +154,18 @@ namespace net {
 	output += "Cookie: " + (*it) + "\r\n";
       if(_gzip && _headers.find("Accept-Encoding") == _headers.end())
 	output += "Accept-Encoding: gzip, deflate\r\n";
-      if(_headers.find("Connection") == _headers.end())
-	output += "Connection: close\r\n";
       if(!_sparams.empty() && !(_method == "GET")) {
 	string sp = _sparams;
 	if(_headers.find("Content-Type") == _headers.end())
 	  output += "Content-Type: text/html\r\n";
 	if(_headers.find("Content-Length") == _headers.end())
-	  output += "Content-Length: " + std::to_string(sp.length()+2) + "\r\n\r\n";
-	output += (_gzip ? deflate(sp) : sp);
-      } else
-	output += "\r\n";
+	  output += "Content-Length: " + std::to_string(sp.length()+2) + "\r\n";
+      };
+      if(_headers.find("Connection") == _headers.end())
+	output += "Connection: close\r\n\r\n";
+
+      if(!_sparams.empty() && !(_method == "GET"))
+	output += (_gzip ? deflate(_sparams) : _sparams);
       return output;
     }
 
