@@ -158,11 +158,13 @@ namespace net {
 	output += "Connection: close\r\n";
       if(!_sparams.empty() && !(_method == "GET")) {
 	string sp = _sparams;
+	if(_headers.find("Content-Type") == _headers.end())
+	  output += "Content-Type: text/html\r\n";
 	if(_headers.find("Content-Length") == _headers.end())
-	  output += "Content-Length: " + std::to_string(sp.length()) + "\r\n\r\n";
-	output += (_gzip ? deflate(sp) : sp) + "\r\n";
-      }
-      output += "\r\n";
+	  output += "Content-Length: " + std::to_string(sp.length()+2) + "\r\n\r\n";
+	output += (_gzip ? deflate(sp) : sp);
+      } else
+	output += "\r\n";
       return output;
     }
 
@@ -181,6 +183,7 @@ namespace net {
       _headers = headers;
       _params = params;
       _cookies = cookies;
+      _method = method;
       _host = host;
       if(_host.empty()) {
 	throw HttpClientException("Unable to start the client without host!");
@@ -203,7 +206,7 @@ namespace net {
       }
       _sparams = "";
       if(!_params.empty()) {
-	_sparams = "?";
+	_sparams = (_method == "GET") ? "?" : "";
 	for(map<string, string>::const_iterator it = _params.begin(); it != _params.end(); ++it)
 	  _sparams += it->first + "=" + it->second + "&";
 	if(_sparams.at(_sparams.length() - 1) == '&') _sparams.erase(_sparams.size() - 1);
@@ -217,7 +220,7 @@ namespace net {
       _socket.connect(_host, _port);
       /* Send the request */
       string output = makeQuery();
-      cout << "Write query: " << output << endl << endl;
+      cout << "Query: " << endl << output << endl << endl;
       _socket << output;
       /* wait a second for processing. */
       sleep(1);
