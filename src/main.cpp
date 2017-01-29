@@ -153,7 +153,7 @@ int  main(int argc, char** argv) {
 	  cerr << "Invalid param format (key=value): " << optarg << endl;
 	  exit(1);
 	}
-	params[s.substr(0, found)] = s.substr(found + 1);
+	params[s.substr(0, found)] = Helper::urlEncode(s.substr(found + 1));
 	break;
       }
       default: cerr << "Unknown option" << endl; usage(-1); break;
