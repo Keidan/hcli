@@ -133,7 +133,7 @@ namespace net {
      */
     auto HttpClient::makeQuery() -> string {
       string h = _host;
-      if(h.back() != '/') h += "/";
+      // if(h.back() != '/') h += "/";
       string output = _method + " " + _page;
       if(_method == "GET") output += _sparams;
       output += " HTTP/1.1\r\n";
@@ -166,6 +166,7 @@ namespace net {
 
       if(!_sparams.empty() && !(_method == "GET"))
 	output += (_gzip ? deflate(_sparams) : _sparams);
+      output += "\r\n";
       return output;
     }
 
