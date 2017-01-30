@@ -83,7 +83,7 @@ namespace net {
     return std::string(ERR_error_string(_lib_ssl_errno, NULL));
   }
 
-  EasySocket::EasySocket() : _fd(-1), _useSSL(false), _open(false), _bio(nullptr), _ctx(nullptr), _ssl(nullptr) {
+  EasySocket::EasySocket() : _fd(-1), _useSSL(false), _open(false), _ctx(nullptr), _ssl(nullptr) {
   }
 
   EasySocket::~EasySocket() {
@@ -94,10 +94,6 @@ namespace net {
    * @brief Close the socket with the remote address.
    */
   auto EasySocket::disconnect() -> void {
-    if(_bio != nullptr) {
-      BIO_free_all(_bio); 
-      _bio = nullptr;
-    }
     if(_ctx != nullptr) {
       SSL_CTX_free(_ctx);   
       _ctx = nullptr;

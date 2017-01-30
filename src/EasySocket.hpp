@@ -122,7 +122,6 @@ namespace net {
       int _fd;
       bool _useSSL;
       bool _open;
-      BIO *_bio;
       SSL_CTX *_ctx;
       SSL     *_ssl;
       static unsigned long _lib_ssl_errno;
