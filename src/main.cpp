@@ -32,6 +32,7 @@ using helper::Helper;
 
 constexpr const char* APPNAME = "hcli";
 static HttpClient client(APPNAME);
+static std::ifstream is_params;
 
 static const struct option long_options[] = { 
     { "help"   , 0, NULL, 'h' },
@@ -42,6 +43,7 @@ static const struct option long_options[] = {
     { "cookie" , 1, NULL, '2' },
     { "param"  , 1, NULL, '3' },
     { "gzip"   , 0, NULL, 'g' },
+    { "params" , 1, NULL, '4' },
     { NULL     , 0, NULL,  0  } 
 };
 
@@ -52,6 +54,7 @@ auto signal_hook(int s) -> void {
 
 auto shutdown_hook() -> void {
   if(client.ssl()) net::EasySocket::unloadSSL();
+  if(is_params.is_open()) is_params.close();
   cout << "Bye bye." << endl;
 }
 
@@ -70,6 +73,7 @@ auto usage(int err) -> void {
   cout << "\t--header: Add new header to the query (format key=value)" << endl;
   cout << "\t--cookie: Add new cookie to the query (format value)" << endl;
   cout << "\t--param: Add new param to the query (format key=value)" << endl;
+  cout << "\t--params: A file with the content to use as body request (unavailable with GET method)" << endl;
   exit(err);
 }
 
@@ -128,13 +132,16 @@ int  main(int argc, char** argv) {
 
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "h0:sm:1:2:3:g", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "h0:sm:1:2:3:g4:", long_options, NULL)) != -1) {
     switch (opt) {
       case 'h': usage(0); break;
       case '0': host = string(optarg); break;
       case 's': ssl = true; break;
       case 'g': gzip = true; break;
-      case 'm': method = string(optarg); break;
+      case 'm':
+	method = string(optarg);
+	std::transform(method.begin(), method.end(), method.begin(), ::toupper); 
+	break;
       case '1': {
 	string s(optarg);
 	size_t found = s.find("=");
@@ -156,6 +163,13 @@ int  main(int argc, char** argv) {
 	params[s.substr(0, found)] = Helper::urlEncode(s.substr(found + 1));
 	break;
       }
+      case '4':
+	is_params.open(optarg, std::ios::binary | std::ios::ate);
+	if(!is_params.is_open()) {
+	  cerr << "Unable to open the file " << optarg << endl;
+	  exit(1);
+	}
+	break;
       default: cerr << "Unknown option" << endl; usage(-1); break;
     }
   }
@@ -164,9 +178,14 @@ int  main(int argc, char** argv) {
     cerr << "Unable to load SSL : " << net::EasySocket::lastErrorSSL() << endl;
     exit(1);
   }
+  if(method == "GET" && is_params.is_open()) {
+    cerr << "Unable to use the parameters file with GET method" << endl;
+    exit(1);
+  }
+
   
   try {
-    client.connect(host, method, ssl, gzip, headers, cookies, params);
+    client.connect(host, method, ssl, gzip, headers, cookies, params, is_params);
    
 
     HttpHeader& hdr = client.getHttpHeader();
@@ -183,7 +202,7 @@ int  main(int argc, char** argv) {
       string key = (*it);
       helper::vstring values = hdr.get(key);
       for(helper::vstring::const_iterator jt = values.begin(); jt != values.end(); ++jt) {
-	cout << key << ": " << (*jt) << endl;
+	cout << " - " << key << ": " << (*jt) << endl;
       }
     }
     cout << "Body length:" << plain.length() << endl;

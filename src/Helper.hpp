@@ -16,7 +16,9 @@
 #include <vector>
 #include <cctype>
 #include <iomanip>
+#include <iterator>
 
+#include <iostream>
 namespace helper {
 
   using vstring = std::vector<std::string>;
@@ -59,6 +61,10 @@ namespace helper {
 	return s;
       }
 
+      static auto http_label(bool ssl) -> std::string {
+	return std::string("http") + std::string((ssl ? "s://" : "://"));
+      }
+
       /**
        * @brief Encode an URL
        * @param value The URL to encode.
@@ -84,6 +90,15 @@ namespace helper {
 	  escaped << std::nouppercase;
 	}	
 	return escaped.str();
+      }
+
+
+      static auto toCharVector(const std::string& str) -> std::vector<char> {
+	return std::vector<char>(str.begin(), str.end());
+      }
+
+      static auto fromCharVector(std::vector<char> data) -> std::string {
+	return std::string(data.begin(), data.end());
       }
       
   };

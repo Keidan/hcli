@@ -28,6 +28,7 @@ namespace net {
     using std::string;
     using std::size_t;
     using std::stringstream;
+    using std::ifstream;
     using net::EasySocket;
     using net::http::HttpHeader;
     using helper::Helper;
@@ -40,7 +41,7 @@ namespace net {
 
     HttpClient::HttpClient(const string& appname) : _appname(appname), _socket(), _host(""), 
 						     _gzip(false), _port(80), _page("/"), _method("GET"), 
-						     _headers(), _params(), _cookies(), _sparams(""), _hdr(), _plain("") {
+						     _headers(), _params(), _cookies(), _content(), _hdr(), _plain("") {
     }
     HttpClient::~HttpClient() {
       _socket.disconnect();
@@ -133,12 +134,13 @@ namespace net {
      */
     auto HttpClient::makeQuery() -> string {
       string h = _host;
+      string content =  Helper::fromCharVector(_content);
       // if(h.back() != '/') h += "/";
-      string output = _method + " " + _page;
-      if(_method == "GET") output += _sparams;
+      string output = _method + " " + Helper::http_label(_socket.ssl()) + h +  _page;
+      if(_method == "GET") output +=content;
       output += " HTTP/1.1\r\n";
       if(_headers.find("Host") == _headers.end())
-	output += "Host: " + h + "\r\n";
+	output += "Host: " + h + (_port != 80 ? ":"+std::to_string(_port) : "") + "\r\n";
       if(_headers.find("User-Agent") == _headers.end())
 	output += "User-Agent: " + _appname + "\r\n";
       if(_headers.find("Accept") == _headers.end())
@@ -154,8 +156,8 @@ namespace net {
 	output += "Cookie: " + (*it) + "\r\n";
       if(_gzip && _headers.find("Accept-Encoding") == _headers.end())
 	output += "Accept-Encoding: gzip, deflate\r\n";
-      if(!_sparams.empty() && !(_method == "GET")) {
-	string sp = _sparams;
+      if(!content.empty() && !(_method == "GET")) {
+	string sp = content;
 	if(_headers.find("Content-Type") == _headers.end())
 	  output += "Content-Type: text/html\r\n";
 	if(_headers.find("Content-Length") == _headers.end())
@@ -164,8 +166,8 @@ namespace net {
       if(_headers.find("Connection") == _headers.end())
 	output += "Connection: close\r\n\r\n";
 
-      if(!_sparams.empty() && !(_method == "GET"))
-	output += (_gzip ? deflate(_sparams) : _sparams);
+      if(!content.empty() && !(_method == "GET"))
+	output += (_gzip ? deflate(content) : content);
       output += "\r\n";
       return output;
     }
@@ -179,8 +181,9 @@ namespace net {
      * @param headers Possible user defined headers.
      * @param cookies Possible user defined cookies.
      * @param params Possible user defined params.
+     * @param is_params an input stream to the params (if open)
      */
-    auto HttpClient::connect(string host, string method, bool ssl, bool gzip, map<string, string> headers, vector<string> cookies, map<string, string> params) -> void {
+    auto HttpClient::connect(string host, string method, bool ssl, bool gzip, map<string, string> headers, vector<string> cookies, map<string, string> params, ifstream &is_params) -> void {
       _gzip = gzip;
       _headers = headers;
       _params = params;
@@ -206,24 +209,31 @@ namespace net {
 	_port = std::atoi(_host.substr(found + 1).c_str());
 	_host = _host.substr(0, found);
       }
-      _sparams = "";
-      if(!_params.empty()) {
-	_sparams = (_method == "GET") ? "?" : "";
-	for(map<string, string>::const_iterator it = _params.begin(); it != _params.end(); ++it)
-	  _sparams += it->first + "=" + it->second + "&";
-	if(_sparams.at(_sparams.length() - 1) == '&') _sparams.erase(_sparams.size() - 1);
+      if(is_params.is_open()) {
+	std::streamsize size = is_params.tellg();
+	is_params.seekg(0, std::ios::beg);
+	_content.clear();
+	_content.resize(size);
+	is_params.read(_content.data(), size);
+      } else {
+	string s;
+	if(!_params.empty()) {
+	  s = (_method == "GET") ? "?" : "";
+	  for(map<string, string>::const_iterator it = _params.begin(); it != _params.end(); ++it)
+	    s += it->first + "=" + it->second + "&";
+	  if(s.at(s.length() - 1) == '&') s.erase(s.size() - 1);
+	  _content = Helper::toCharVector(s);
+	}
       }
-      if(_method == "GET")
-	cout << "Send query: " << _method << " " << _page << _sparams << " to host " << _host << " and port " << _port << endl;
-      else
-	cout << "Send query: " << _method << " " << _page << (_sparams.empty() ? "" : " whith content " + _sparams) << " to host " << _host << " and port " << _port << endl;
-    
-      cout << "Use location: http" << (!ssl ? "://" : "s://") << host << ((_method == "GET") && !_sparams.empty() ? _sparams : "") << endl; 
+      string content = Helper::fromCharVector(_content);
+      cout << "Use location: " << Helper::http_label(ssl) << host << ((_method == "GET") && !_content.empty() ? content : "") << endl; 
+      cout << "Query " << _method << " " << Helper::http_label(ssl) << host << _page << (_content.empty() ? "" : " whith content " + content) << endl;
       _socket.connect(_host, _port);
       /* Send the request */
       string output = makeQuery();
       cout << "Query: " << endl << output << endl << endl;
       _socket << output;
+      cout << "Wait for response ..." << endl;
       /* wait a second for processing. */
       sleep(1);
 
@@ -244,6 +254,7 @@ namespace net {
       /* Test if the body response is chuncked */
       oss.str("");
       if(_hdr.equals("Transfer-Encoding", "chunked")) {
+	cout << "Chunked response ..." << endl;
 	size_t chunk = 0, count = 0;
 	do {
 	  string w = readdata;
@@ -258,7 +269,7 @@ namespace net {
 	    string v = Helper::trim(Helper::trim(Helper::trim(readdata.substr(0, found), '\r'), '\n'));
 	    ss << std::hex << v;
 	    ss >> chunk;
-	    cout << (++count) << " chunk bloc length:" << chunk << " (0x" << v << ")" << endl;
+	    cout << (++count) << " chunk bloc size " << chunk << " (0x" << v << ")" << endl;
 	    readdata = readdata.substr(found + 2);
 	    if(!_gzip) {
 	      oss << readdata.substr(0, chunk);

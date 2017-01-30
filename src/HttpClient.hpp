@@ -13,6 +13,7 @@
 #include "HttpHeader.hpp"
 #include <exception>
 #include <map>
+#include <fstream>
 
 namespace net {
   namespace http {
@@ -53,8 +54,9 @@ namespace net {
 	 * @param headers Possible user defined headers.
 	 * @param cookies Possible user defined cookies.
 	 * @param params Possible user defined params.
+	 * @param is_params an input stream to the params (if open)
 	 */
-	auto connect(std::string host, std::string method, bool ssl, bool gzip, std::map<std::string, std::string> headers, std::vector<std::string> cookies, std::map<std::string, std::string> params) -> void;
+	auto connect(std::string host, std::string method, bool ssl, bool gzip, std::map<std::string, std::string> headers, std::vector<std::string> cookies, std::map<std::string, std::string> params, std::ifstream &is_params) -> void;
 
 	/**
 	 * @brief Test if the SSL is set.
@@ -72,7 +74,7 @@ namespace net {
 	std::map<std::string, std::string> _headers;
 	std::map<std::string, std::string> _params;
 	std::vector<std::string> _cookies;
-	std::string _sparams;
+	std::vector<char> _content;
 	HttpHeader _hdr;
 	std::string _plain;
 	/**
