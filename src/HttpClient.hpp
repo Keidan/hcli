@@ -28,6 +28,32 @@ namespace net {
 	std::string _msg;
     };
 
+
+    struct HttpClientConnect {
+        /**
+	 * @param host The host value.
+	 * @param method The HTTP method to use.
+	 * @param ssl Test if we need to use the SSL sockets.
+	 * @param gzip Test if we need to use GZIP contents.
+	 * @param headers Possible user defined headers.
+	 * @param cookies Possible user defined cookies.
+	 * @param params Possible user defined params.
+	 * @param is_params an input stream to the params (if open).
+	 * @param urlencode URL encode the parameters.
+	 * @param uexcept Ignore some char for URL encode.
+	 */
+	std::string host;
+	std::string method;
+	bool ssl;
+	bool gzip;
+	std::map<std::string, std::string> headers;
+	std::vector<std::string> cookies;
+	std::map<std::string, std::string> params;
+	std::ifstream *is_params;
+	bool urlencode;
+	std::string uexcept;
+    };
+
     class HttpClient {
       public:
 	HttpClient(const std::string& appname);
@@ -47,16 +73,9 @@ namespace net {
 
 	/**
 	 * @brief Connect the socket.
-	 * @param host The host value.
-	 * @param method The HTTP method to use.
-	 * @param ssl Test if we need to use the SSL sockets.
-	 * @param gzip Test if we need to use GZIP contents.
-	 * @param headers Possible user defined headers.
-	 * @param cookies Possible user defined cookies.
-	 * @param params Possible user defined params.
-	 * @param is_params an input stream to the params (if open)
+	 * @param connect The connect context
 	 */
-	auto connect(std::string host, std::string method, bool ssl, bool gzip, std::map<std::string, std::string> headers, std::vector<std::string> cookies, std::map<std::string, std::string> params, std::ifstream &is_params) -> void;
+	auto connect(const HttpClientConnect& connect) -> void;
 
 	/**
 	 * @brief Test if the SSL is set.
@@ -70,13 +89,12 @@ namespace net {
 	bool _gzip;
 	int _port;
 	std::string _page;
-	std::string _method;
-	std::map<std::string, std::string> _headers;
-	std::map<std::string, std::string> _params;
-	std::vector<std::string> _cookies;
 	std::vector<char> _content;
 	HttpHeader _hdr;
 	std::string _plain;
+	HttpClientConnect _connect;
+
+
 	/**
 	 * @brief Deflate plain data in GZIP.
 	 * @param toDeflate To deflate.

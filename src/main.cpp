@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <streambuf>
 
 #include <sys/types.h>
 #include "HttpClient.hpp" 
@@ -26,7 +27,9 @@ using std::map;
 using std::vector;
 using std::string;
 using std::size_t;
+using std::ifstream;
 using net::http::HttpClient;
+using net::http::HttpClientConnect;
 using net::http::HttpHeader;
 using helper::Helper;
 
@@ -35,16 +38,19 @@ static HttpClient client(APPNAME);
 static std::ifstream is_params;
 
 static const struct option long_options[] = { 
-    { "help"   , 0, NULL, 'h' },
-    { "host"   , 1, NULL, '0' },
-    { "ssl"    , 0, NULL, 's' },
-    { "method" , 1, NULL, 'm' },
-    { "header" , 1, NULL, '1' },
-    { "cookie" , 1, NULL, '2' },
-    { "param"  , 1, NULL, '3' },
-    { "gzip"   , 0, NULL, 'g' },
-    { "params" , 1, NULL, '4' },
-    { NULL     , 0, NULL,  0  } 
+    { "help"      , 0, NULL, 'h' },
+    { "host"      , 1, NULL, '0' },
+    { "ssl"       , 0, NULL, 's' },
+    { "method"    , 1, NULL, 'm' },
+    { "header"    , 1, NULL, '1' },
+    { "cookie"    , 1, NULL, '2' },
+    { "param"     , 1, NULL, '3' },
+    { "gzip"      , 0, NULL, 'g' },
+    { "params"    , 1, NULL, '4' },
+    { "headers"   , 1, NULL, '5' },
+    { "urlencode" , 0, NULL, '6' },
+    { "uexcept"   , 1, NULL, '7' },
+    { NULL        , 0, NULL,  0  } 
 };
 
 auto signal_hook(int s) -> void { 
@@ -68,12 +74,15 @@ auto usage(int err) -> void {
   cout << "\t--help, -h: Print this help." << endl;
   cout << "\t--host: Host address." << endl;
   cout << "\t--ssl, -s: Use SSL." << endl;
-  cout << "\t--gzip, -g: Use Accept-Encoding: gzip " << endl;
-  cout << "\t--method, -m: HTTP method." << endl;
-  cout << "\t--header: Add new header to the query (format key=value)" << endl;
-  cout << "\t--cookie: Add new cookie to the query (format value)" << endl;
-  cout << "\t--param: Add new param to the query (format key=value)" << endl;
-  cout << "\t--params: A file with the content to use as body request (unavailable with GET method)" << endl;
+  cout << "\t--gzip, -g: Use Accept-Encoding: gzip." << endl;
+  cout << "\t--method, -m: HTTP method.." << endl;
+  cout << "\t--header: Add new header to the query (format key=value)." << endl;
+  cout << "\t--headers: A file with the headers." << endl;
+  cout << "\t--cookie: Add new cookie to the query (format value)." << endl;
+  cout << "\t--param: Add new param to the query (format key=value)." << endl;
+  cout << "\t--params: A file with the content to use as body request (unavailable with GET method)." << endl;
+  cout << "\t--urlencode: URL encode the params." << endl;
+  cout << "\t--uexcept: The list of characters that are not encoded in URL format." << endl;
   exit(err);
 }
 
@@ -116,10 +125,26 @@ void print_hex(FILE* std, unsigned char* buffer, int len, bool print_raw) {
   fprintf(std, "\n");
 }
 
+auto readFile(const char* filename) -> string {
+  ifstream ifs(filename);
+  if(!ifs.is_open()) {
+    cerr << "Unable to open the file " << filename << endl;
+    exit(1);
+  }
+  string content;
+  ifs.seekg(0, std::ios::end);   
+  content.reserve(ifs.tellg());
+  ifs.seekg(0, std::ios::beg);
+  content.assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
+  ifs.close();
+  return content;
+}
+
 int  main(int argc, char** argv) {
   struct sigaction sa;
   string host(""), method = "GET";
-  bool gzip = false, ssl = false;
+  bool gzip = false, ssl = false, urlencode = false;
+  string uexcept = "";
   map<string, string> headers;
   map<string, string> params;
   vector<string> cookies;
@@ -132,7 +157,7 @@ int  main(int argc, char** argv) {
 
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "h0:sm:1:2:3:g4:", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "h0:sm:1:2:3:g4:5:67:", long_options, NULL)) != -1) {
     switch (opt) {
       case 'h': usage(0); break;
       case '0': host = string(optarg); break;
@@ -142,7 +167,7 @@ int  main(int argc, char** argv) {
 	method = string(optarg);
 	std::transform(method.begin(), method.end(), method.begin(), ::toupper); 
 	break;
-      case '1': {
+      case '1': { /* headers */
 	string s(optarg);
 	size_t found = s.find("=");
 	if(found == string::npos) {
@@ -153,27 +178,42 @@ int  main(int argc, char** argv) {
 	break;
       }
       case '2': cookies.push_back(string(optarg)); break;
-      case '3': {
+      case '3': { /* params */
 	string s(optarg);
 	size_t found = s.find("=");
 	if(found == string::npos) {
 	  cerr << "Invalid param format (key=value): " << optarg << endl;
 	  exit(1);
 	}
-	params[s.substr(0, found)] = Helper::urlEncode(s.substr(found + 1));
+	params[s.substr(0, found)] = s.substr(found + 1);
 	break;
       }
-      case '4':
+      case '4': /* is_params */
 	is_params.open(optarg, std::ios::binary | std::ios::ate);
 	if(!is_params.is_open()) {
 	  cerr << "Unable to open the file " << optarg << endl;
 	  exit(1);
 	}
 	break;
+      case '5': { /* headers file */
+	string content = readFile(optarg);
+	size_t pos = content.find("\n");
+	while(pos != string::npos) {
+	  string line = content.substr(0, pos);
+	  content = content.substr(pos+1);
+	  if(line.at(0) == '#') continue;
+	  size_t ppos = line.find("=");
+	  if(ppos != string::npos)
+	    headers[line.substr(0, ppos)] = line.substr(ppos+1);
+	  pos = content.find("\n");
+	}
+	break;
+      }
+      case '6': urlencode = true; break;
+      case '7': uexcept = string(optarg); break;
       default: cerr << "Unknown option" << endl; usage(-1); break;
     }
   }
-
   if(ssl && !net::EasySocket::loadSSL()) {
     cerr << "Unable to load SSL : " << net::EasySocket::lastErrorSSL() << endl;
     exit(1);
@@ -185,7 +225,18 @@ int  main(int argc, char** argv) {
 
   
   try {
-    client.connect(host, method, ssl, gzip, headers, cookies, params, is_params);
+    HttpClientConnect cnx;
+    cnx.host = host;
+    cnx.method = method;
+    cnx.ssl = ssl;
+    cnx.gzip = gzip;
+    cnx.headers = headers;
+    cnx.cookies = cookies;
+    cnx.params = params;
+    cnx.is_params = &is_params;
+    cnx.urlencode = urlencode;
+    cnx.uexcept = uexcept;
+    client.connect(cnx);
    
 
     HttpHeader& hdr = client.getHttpHeader();

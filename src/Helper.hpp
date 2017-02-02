@@ -70,7 +70,7 @@ namespace helper {
        * @param value The URL to encode.
        * @return the endoded URL.
        */
-      static auto urlEncode(const std::string &value) -> std::string{
+      static auto urlEncode(const std::string &value, const std::string &except = "") -> std::string{
 	std::ostringstream escaped;
 	escaped.fill('0');
 	escaped << std::hex;
@@ -79,7 +79,7 @@ namespace helper {
 	  std::string::value_type c = (*i);
 
 	  // Keep alphanumeric and other accepted characters intact
-	  if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+	  if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || except.find(c) != std::string::npos) {
             escaped << c;
             continue;
 	  }

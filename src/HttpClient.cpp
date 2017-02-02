@@ -38,10 +38,9 @@ namespace net {
     constexpr size_t GZIP_ENCODING = 16;
     constexpr size_t CHUNK = 1024;
 
-
-    HttpClient::HttpClient(const string& appname) : _appname(appname), _socket(), _host(""), 
-						     _gzip(false), _port(80), _page("/"), _method("GET"), 
-						     _headers(), _params(), _cookies(), _content(), _hdr(), _plain("") {
+    HttpClient::HttpClient(const string& appname) : _appname(appname), _socket(), 
+						     _port(80), _page("/"), 
+						    _content(), _hdr(), _plain(""), _connect() {
     }
     HttpClient::~HttpClient() {
       _socket.disconnect();
@@ -133,105 +132,95 @@ namespace net {
      * @return The query.
      */
     auto HttpClient::makeQuery() -> string {
-      string h = _host;
+      bool isGET = (_connect.method == "GET");
+      string h = _connect.host;
       string content =  Helper::fromCharVector(_content);
       // if(h.back() != '/') h += "/";
-      string output = _method + " " + Helper::http_label(_socket.ssl()) + h +  _page;
-      if(_method == "GET") output +=content;
+      string output = _connect.method + " " + Helper::http_label(_socket.ssl()) + h +  _page;
+      if(isGET) output += _connect.urlencode ? Helper::urlEncode(content) : content;
       output += " HTTP/1.1\r\n";
-      if(_headers.find("Host") == _headers.end())
+      if(_connect.headers.find("Host") == _connect.headers.end())
 	output += "Host: " + h + (_port != 80 ? ":"+std::to_string(_port) : "") + "\r\n";
-      if(_headers.find("User-Agent") == _headers.end())
+      if(_connect.headers.find("User-Agent") == _connect.headers.end())
 	output += "User-Agent: " + _appname + "\r\n";
-      if(_headers.find("Accept") == _headers.end())
+      if(_connect.headers.find("Accept") == _connect.headers.end())
 	output += "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
-      if(_headers.find("Accept-Language") == _headers.end())
+      if(_connect.headers.find("Accept-Language") == _connect.headers.end())
 	output += "Accept-Language: q=0.8,en-US;q=0.5,en;q=0.3\r\n";
-      for(map<string, string>::const_iterator it = _headers.begin(); it != _headers.end(); ++it) {
+      for(map<string, string>::const_iterator it = _connect.headers.begin(); it != _connect.headers.end(); ++it) {
 	output += it->first + ": " + it->second + "\r\n";
-	if(it->first == "Accept-Encoding" && it->second.find("gzip") != string::npos && !_gzip)
-	  _gzip = true;
+	if(it->first == "Accept-Encoding" && it->second.find("gzip") != string::npos && !_connect.gzip)
+	  _connect.gzip = true;
       }
-      for(vector<string>::const_iterator it = _cookies.begin(); it != _cookies.end(); ++it)
+      for(vector<string>::const_iterator it = _connect.cookies.begin(); it != _connect.cookies.end(); ++it)
 	output += "Cookie: " + (*it) + "\r\n";
-      if(_gzip && _headers.find("Accept-Encoding") == _headers.end())
+      if(_connect.gzip && _connect.headers.find("Accept-Encoding") == _connect.headers.end())
 	output += "Accept-Encoding: gzip, deflate\r\n";
-      if(!content.empty() && !(_method == "GET")) {
+      if(!content.empty() && !isGET) {
 	string sp = content;
-	if(_headers.find("Content-Type") == _headers.end())
+	if(_connect.headers.find("Content-Type") == _connect.headers.end())
 	  output += "Content-Type: text/html\r\n";
-	if(_headers.find("Content-Length") == _headers.end())
-	  output += "Content-Length: " + std::to_string(sp.length()+2) + "\r\n";
+	if(_connect.headers.find("Content-Length") == _connect.headers.end())
+	  output += "Content-Length: " + std::to_string(sp.length()) + "\r\n";
       };
-      if(_headers.find("Connection") == _headers.end())
+      if(_connect.headers.find("Connection") == _connect.headers.end())
 	output += "Connection: close\r\n\r\n";
 
-      if(!content.empty() && !(_method == "GET"))
-	output += (_gzip ? deflate(content) : content);
+      if(!content.empty() && !isGET)
+	output += (_connect.gzip ? deflate(content) : (_connect.urlencode ? Helper::urlEncode(content, _connect.uexcept) : content));
       output += "\r\n";
       return output;
     }
 
     /**
      * @brief Connect the socket.
-     * @param host The host value.
-     * @param method The HTTP method to use.
-     * @param ssl Test if we need to use the SSL sockets.
-     * @param gzip Test if we need to use GZIP contents.
-     * @param headers Possible user defined headers.
-     * @param cookies Possible user defined cookies.
-     * @param params Possible user defined params.
-     * @param is_params an input stream to the params (if open)
+     * @param connect The connect context
      */
-    auto HttpClient::connect(string host, string method, bool ssl, bool gzip, map<string, string> headers, vector<string> cookies, map<string, string> params, ifstream &is_params) -> void {
-      _gzip = gzip;
-      _headers = headers;
-      _params = params;
-      _cookies = cookies;
-      _method = method;
-      _host = host;
-      if(_host.empty()) {
+    auto HttpClient::connect(const HttpClientConnect& connect) -> void {
+      _connect = connect;
+      bool isGET = (_connect.method == "GET");
+      if(_connect.host.empty()) {
 	throw HttpClientException("Unable to start the client without host!");
       }
-      _socket.ssl(ssl);
+      _socket.ssl(_connect.ssl);
       /* decode the host value */
       _port = !_socket.ssl() ? 80 : 443;
       _page = "/";
       /* get the page value */
-      size_t found = _host.find("/");
+      size_t found = _connect.host.find("/");
       if(found != string::npos) {
-	_page = _host.substr(found);
-	_host = _host.substr(0, found);
+	_page = _connect.host.substr(found);
+	_connect.host = _connect.host.substr(0, found);
       }
       /* get the port value */
-      found = _host.find(":");
+      found = _connect.host.find(":");
       if(found != string::npos) {
-	_port = std::atoi(_host.substr(found + 1).c_str());
-	_host = _host.substr(0, found);
+	_port = std::atoi(_connect.host.substr(found + 1).c_str());
+	_connect.host = _connect.host.substr(0, found);
       }
-      if(is_params.is_open()) {
-	std::streamsize size = is_params.tellg();
-	is_params.seekg(0, std::ios::beg);
+      if(_connect.is_params->is_open()) {
+	std::streamsize size = _connect.is_params->tellg();
+	_connect.is_params->seekg(0, std::ios::beg);
 	_content.clear();
 	_content.resize(size);
-	is_params.read(_content.data(), size);
+	_connect.is_params->read(_content.data(), size);
       } else {
 	string s;
-	if(!_params.empty()) {
-	  s = (_method == "GET") ? "?" : "";
-	  for(map<string, string>::const_iterator it = _params.begin(); it != _params.end(); ++it)
+	if(!_connect.params.empty()) {
+	  s = isGET ? "?" : "";
+	  for(map<string, string>::const_iterator it = _connect.params.begin(); it != _connect.params.end(); ++it)
 	    s += it->first + "=" + it->second + "&";
 	  if(s.at(s.length() - 1) == '&') s.erase(s.size() - 1);
 	  _content = Helper::toCharVector(s);
 	}
       }
       string content = Helper::fromCharVector(_content);
-      cout << "Use location: " << Helper::http_label(ssl) << host << ((_method == "GET") && !_content.empty() ? content : "") << endl; 
-      cout << "Query " << _method << " " << Helper::http_label(ssl) << host << _page << (_content.empty() ? "" : " whith content " + content) << endl;
-      _socket.connect(_host, _port);
+      cout << "Use location: " << Helper::http_label(_connect.ssl) << _connect.host << (isGET && !_content.empty() ? content : "") << endl; 
+      cout << "Query " << _connect.method << " " << Helper::http_label(_connect.ssl) << _connect.host << _page << (_content.empty() ? "" : " whith content " + content) << endl;
+      _socket.connect(_connect.host, _port);
       /* Send the request */
       string output = makeQuery();
-      cout << "Query: " << endl << output << endl << endl;
+     cout << "Query: " << endl << output << endl << endl;
       _socket << output;
       cout << "Wait for response ..." << endl;
       /* wait a second for processing. */
@@ -271,7 +260,7 @@ namespace net {
 	    ss >> chunk;
 	    cout << (++count) << " chunk bloc size " << chunk << " (0x" << v << ")" << endl;
 	    readdata = readdata.substr(found + 2);
-	    if(!_gzip) {
+	    if(!_connect.gzip) {
 	      oss << readdata.substr(0, chunk);
 	      readdata = readdata.substr(chunk);
 	    } else {
@@ -279,7 +268,7 @@ namespace net {
 	      oss << readdata;
 	    }
 	  }
-	} while(chunk && !_gzip);
+	} while(chunk && !_connect.gzip);
       } else
 	oss << readdata;
       /* test support of gzip content */
