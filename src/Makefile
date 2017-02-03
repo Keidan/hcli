@@ -1,6 +1,6 @@
 
 installdir 	:= ../deploy/$(shell uname -m)
-appname		:= hcli.elf
+appname		:= httpu.elf
 
 CXX		:= g++
 FLAGS 		:=-fstack-protector-all -D_FORTIFY_SOURCE=2 -ffunction-sections -Wall -std=c++11

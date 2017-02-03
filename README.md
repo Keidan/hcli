@@ -1,7 +1,7 @@
-hcli
+httpu
 ===
 
-(GPL) Http(s) Client is a FREE software.
+(GPL) Http(s) Utils is a FREE software.
 
 
 This software allow to forge inline HTTP(s) requests.
@@ -22,8 +22,8 @@ Download the software :
 
 	mkdir devel
 	cd devel
-	git clone git://github.com/Keidan/hcli.git
-	cd hcli
+	git clone git://github.com/Keidan/httpu.git
+	cd httpu
 	make
 
   

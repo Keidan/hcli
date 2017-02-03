@@ -66,7 +66,7 @@ auto shutdown_hook() -> void {
 }
 
 auto usage(int err) -> void {
-  cout << "usage: hclient options" << endl;
+  cout << "usage: httpu options" << endl;
   cout << "Possible host values: " << endl;
   cout << "--host www.ralala.fr (use port 80 and page /)" << endl;
   cout << "--host www.ralala.fr -s (use port 443 and page /)" << endl;
