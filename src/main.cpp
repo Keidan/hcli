@@ -50,6 +50,7 @@ static const struct option long_options[] = {
     { "headers"   , 1, NULL, '5' },
     { "urlencode" , 0, NULL, '6' },
     { "uexcept"   , 1, NULL, '7' },
+    { "form"      , 0, NULL, '8' },
     { NULL        , 0, NULL,  0  } 
 };
 
@@ -81,6 +82,7 @@ auto usage(int err) -> void {
   cout << "\t--cookie: Add new cookie to the query (format value)." << endl;
   cout << "\t--param: Add new param to the query (format key=value)." << endl;
   cout << "\t--params: A file with the content to use as body request (unavailable with GET method)." << endl;
+  cout << "\t--form: A file with the content to use as body request (unavailable with GET method)." << endl;
   cout << "\t--urlencode: URL encode the params." << endl;
   cout << "\t--uexcept: The list of characters that are not encoded in URL format." << endl;
   exit(err);
@@ -141,13 +143,12 @@ auto readFile(const char* filename) -> string {
 }
 
 int  main(int argc, char** argv) {
+  HttpClientConnect cnx;
   struct sigaction sa;
-  string host(""), method = "GET";
-  bool gzip = false, ssl = false, urlencode = false;
-  string uexcept = "";
-  map<string, string> headers;
-  map<string, string> params;
-  vector<string> cookies;
+  cnx.method = "GET";
+  cnx.host = cnx.uexcept = "";
+  cnx.gzip = cnx.ssl = cnx.urlencode = cnx.isform = false;
+  cnx.is_params = &is_params;
 
   memset(&sa, 0, sizeof(struct sigaction));
   sa.sa_handler = &signal_hook;
@@ -157,15 +158,15 @@ int  main(int argc, char** argv) {
 
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "h0:sm:1:2:3:g4:5:67:", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "h0:sm:1:2:3:g4:5:67:8", long_options, NULL)) != -1) {
     switch (opt) {
       case 'h': usage(0); break;
-      case '0': host = string(optarg); break;
-      case 's': ssl = true; break;
-      case 'g': gzip = true; break;
+      case '0': cnx.host = string(optarg); break;
+      case 's': cnx.ssl = true; break;
+      case 'g': cnx.gzip = true; break;
       case 'm':
-	method = string(optarg);
-	std::transform(method.begin(), method.end(), method.begin(), ::toupper); 
+	cnx.method = string(optarg);
+	std::transform(cnx.method.begin(), cnx.method.end(), cnx.method.begin(), ::toupper); 
 	break;
       case '1': { /* headers */
 	string s(optarg);
@@ -174,10 +175,10 @@ int  main(int argc, char** argv) {
 	  cerr << "Invalid header format (key=value): " << optarg << endl;
 	  exit(1);
 	}
-	headers[s.substr(0, found)] = s.substr(found + 1);
+	cnx.headers[s.substr(0, found)] = s.substr(found + 1);
 	break;
       }
-      case '2': cookies.push_back(string(optarg)); break;
+      case '2': cnx.cookies.push_back(string(optarg)); break;
       case '3': { /* params */
 	string s(optarg);
 	size_t found = s.find("=");
@@ -185,7 +186,7 @@ int  main(int argc, char** argv) {
 	  cerr << "Invalid param format (key=value): " << optarg << endl;
 	  exit(1);
 	}
-	params[s.substr(0, found)] = s.substr(found + 1);
+	cnx.params[s.substr(0, found)] = s.substr(found + 1);
 	break;
       }
       case '4': /* is_params */
@@ -204,38 +205,28 @@ int  main(int argc, char** argv) {
 	  if(line.at(0) == '#') continue;
 	  size_t ppos = line.find("=");
 	  if(ppos != string::npos)
-	    headers[line.substr(0, ppos)] = line.substr(ppos+1);
+	    cnx.headers[line.substr(0, ppos)] = line.substr(ppos+1);
 	  pos = content.find("\n");
 	}
 	break;
       }
-      case '6': urlencode = true; break;
-      case '7': uexcept = string(optarg); break;
+      case '6': cnx.urlencode = true; break;
+      case '7': cnx.uexcept = string(optarg); break;
+      case '8': cnx.isform = true; break;
       default: cerr << "Unknown option" << endl; usage(-1); break;
     }
   }
-  if(ssl && !net::EasySocket::loadSSL()) {
+  if(cnx.ssl && !net::EasySocket::loadSSL()) {
     cerr << "Unable to load SSL : " << net::EasySocket::lastErrorSSL() << endl;
     exit(1);
   }
-  if(method == "GET" && is_params.is_open()) {
+  if(cnx.method == "GET" && cnx.is_params->is_open()) {
     cerr << "Unable to use the parameters file with GET method" << endl;
     exit(1);
   }
 
   
   try {
-    HttpClientConnect cnx;
-    cnx.host = host;
-    cnx.method = method;
-    cnx.ssl = ssl;
-    cnx.gzip = gzip;
-    cnx.headers = headers;
-    cnx.cookies = cookies;
-    cnx.params = params;
-    cnx.is_params = &is_params;
-    cnx.urlencode = urlencode;
-    cnx.uexcept = uexcept;
     client.connect(cnx);
    
 

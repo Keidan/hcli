@@ -17,7 +17,6 @@
 #include "Helper.hpp"
 #include <zlib.h>
 
-
 namespace net {
   namespace http {
 
@@ -32,7 +31,6 @@ namespace net {
     using net::EasySocket;
     using net::http::HttpHeader;
     using helper::Helper;
-
 
     constexpr size_t windowBits = 15;
     constexpr size_t GZIP_ENCODING = 16;
@@ -159,16 +157,17 @@ namespace net {
       if(!content.empty() && !isGET) {
 	string sp = content;
 	if(_connect.headers.find("Content-Type") == _connect.headers.end())
-	  output += "Content-Type: text/html\r\n";
+	  output += "Content-Type: " + std::string(_connect.isform ? "application/x-www-form-urlencoded" :  "text/html") + "\r\n";
 	if(_connect.headers.find("Content-Length") == _connect.headers.end())
-	  output += "Content-Length: " + std::to_string(sp.length()) + "\r\n";
+	  output += "Content-Length: " + std::to_string(sp.length() + 2) + "\r\n";
       };
       if(_connect.headers.find("Connection") == _connect.headers.end())
 	output += "Connection: close\r\n\r\n";
 
       if(!content.empty() && !isGET)
 	output += (_connect.gzip ? deflate(content) : (_connect.urlencode ? Helper::urlEncode(content, _connect.uexcept) : content));
-      output += "\r\n";
+      else
+	output += "\r\n";
       return output;
     }
 
