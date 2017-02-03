@@ -41,7 +41,9 @@ namespace net {
 	 * @param is_params an input stream to the params (if open).
 	 * @param urlencode URL encode the parameters.
 	 * @param uexcept Ignore some char for URL encode.
-	 * @param isform Is form url encoded
+	 * @param isform Is form url encoded.
+	 * @param print_query Print the query.
+	 * @param print_chunk Print the chunk info.
 	 */
 	std::string host;
 	std::string method;
@@ -54,6 +56,8 @@ namespace net {
 	bool urlencode;
 	std::string uexcept;
 	bool isform;
+	bool print_query;
+	bool print_chunk;
     };
 
     class HttpClient {

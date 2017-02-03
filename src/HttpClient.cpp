@@ -219,7 +219,8 @@ namespace net {
       _socket.connect(_connect.host, _port);
       /* Send the request */
       string output = makeQuery();
-     cout << "Query: " << endl << output << endl << endl;
+      if(_connect.print_query)
+	cout << "Query: " << endl << output << endl << endl;
       _socket << output;
       cout << "Wait for response ..." << endl;
       /* wait a second for processing. */
@@ -242,7 +243,8 @@ namespace net {
       /* Test if the body response is chuncked */
       oss.str("");
       if(_hdr.equals("Transfer-Encoding", "chunked")) {
-	cout << "Chunked response ..." << endl;
+	if(_connect.print_chunk)
+	  cout << "Chunked response ..." << endl;
 	size_t chunk = 0, count = 0;
 	do {
 	  string w = readdata;
@@ -257,7 +259,8 @@ namespace net {
 	    string v = Helper::trim(Helper::trim(Helper::trim(readdata.substr(0, found), '\r'), '\n'));
 	    ss << std::hex << v;
 	    ss >> chunk;
-	    cout << (++count) << " chunk bloc size " << chunk << " (0x" << v << ")" << endl;
+	    if(_connect.print_chunk)
+	      cout << (++count) << " chunk bloc size " << chunk << " (0x" << v << ")" << endl;
 	    readdata = readdata.substr(found + 2);
 	    if(!_connect.gzip) {
 	      oss << readdata.substr(0, chunk);

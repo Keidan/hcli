@@ -32,26 +32,28 @@ using net::http::HttpClient;
 using net::http::HttpClientConnect;
 using net::http::HttpHeader;
 using helper::Helper;
+using helper::vstring;
 
 constexpr const char* APPNAME = "hcli";
 static HttpClient client(APPNAME);
 static std::ifstream is_params;
 
 static const struct option long_options[] = { 
-    { "help"      , 0, NULL, 'h' },
-    { "host"      , 1, NULL, '0' },
-    { "ssl"       , 0, NULL, 's' },
-    { "method"    , 1, NULL, 'm' },
-    { "header"    , 1, NULL, '1' },
-    { "cookie"    , 1, NULL, '2' },
-    { "param"     , 1, NULL, '3' },
-    { "gzip"      , 0, NULL, 'g' },
-    { "params"    , 1, NULL, '4' },
-    { "headers"   , 1, NULL, '5' },
-    { "urlencode" , 0, NULL, '6' },
-    { "uexcept"   , 1, NULL, '7' },
-    { "form"      , 0, NULL, '8' },
-    { NULL        , 0, NULL,  0  } 
+    { "help"        , 0, NULL, 'h' },
+    { "verbose"     , 1, NULL, 'v' },
+    { "host"        , 1, NULL, '0' },
+    { "ssl"         , 0, NULL, 's' },
+    { "method"      , 1, NULL, 'm' },
+    { "header"      , 1, NULL, '1' },
+    { "cookie"      , 1, NULL, '2' },
+    { "param"       , 1, NULL, '3' },
+    { "gzip"        , 0, NULL, 'g' },
+    { "params"      , 1, NULL, '4' },
+    { "headers"     , 1, NULL, '5' },
+    { "urlencode"   , 0, NULL, '6' },
+    { "uexcept"     , 1, NULL, '7' },
+    { "form"        , 0, NULL, '8' },
+    { NULL          , 0, NULL,  0  } 
 };
 
 auto signal_hook(int s) -> void { 
@@ -73,6 +75,7 @@ auto usage(int err) -> void {
   cout << "--host www.ralala.fr:8443 -s (use port 8443 and page /)" << endl;
   cout << "--host www.ralala.fr:8080/login (use port 8080 and page /login)" << endl;
   cout << "\t--help, -h: Print this help." << endl;
+  cout << "\t--verbose -v: Verbose mode, possible values all|query|chunk|resp_hdr (use '|' to combine)." << endl;
   cout << "\t--host: Host address." << endl;
   cout << "\t--ssl, -s: Use SSL." << endl;
   cout << "\t--gzip, -g: Use Accept-Encoding: gzip." << endl;
@@ -145,9 +148,10 @@ auto readFile(const char* filename) -> string {
 int  main(int argc, char** argv) {
   HttpClientConnect cnx;
   struct sigaction sa;
+  bool print_hdr = false;
   cnx.method = "GET";
   cnx.host = cnx.uexcept = "";
-  cnx.gzip = cnx.ssl = cnx.urlencode = cnx.isform = false;
+  cnx.gzip = cnx.ssl = cnx.urlencode = cnx.isform = cnx.print_query = cnx.print_chunk = false;
   cnx.is_params = &is_params;
 
   memset(&sa, 0, sizeof(struct sigaction));
@@ -158,9 +162,26 @@ int  main(int argc, char** argv) {
 
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "h0:sm:1:2:3:g4:5:67:8", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "hv:0:sm:1:2:3:g4:5:67:8", long_options, NULL)) != -1) {
     switch (opt) {
       case 'h': usage(0); break;
+      case 'v': {
+	string verbose = string(optarg);
+	vstring vs = Helper::split(string(optarg), '|');
+	for(vstring::iterator it = vs.begin(); it != vs.end(); ++it) {
+	  string v = *it;
+	  std::transform(v.begin(), v.end(), v.begin(), ::toupper); 
+	  if(v == "ALL")
+	    print_hdr = cnx.print_query = cnx.print_chunk = true;
+	  else if(v == "RESP_HDR")
+	    print_hdr = true;
+	  else if(v == "CHUNK")
+	    cnx.print_chunk = true;
+	  else if(v == "QUERY")
+	    cnx.print_query = true;
+	}
+	break;
+      }
       case '0': cnx.host = string(optarg); break;
       case 's': cnx.ssl = true; break;
       case 'g': cnx.gzip = true; break;
@@ -198,15 +219,13 @@ int  main(int argc, char** argv) {
 	break;
       case '5': { /* headers file */
 	string content = readFile(optarg);
-	size_t pos = content.find("\n");
-	while(pos != string::npos) {
-	  string line = content.substr(0, pos);
-	  content = content.substr(pos+1);
+	vstring vs = Helper::split(content, '\n');
+	for(vstring::iterator it = vs.begin(); it != vs.end(); ++it) {
+	  string line = *it;
 	  if(line.at(0) == '#') continue;
-	  size_t ppos = line.find("=");
-	  if(ppos != string::npos)
-	    cnx.headers[line.substr(0, ppos)] = line.substr(ppos+1);
-	  pos = content.find("\n");
+	  vstring _vs = Helper::split(line, '=');
+	  if(_vs.size() == 2)
+	    cnx.headers[_vs[0]] = _vs[1];
 	}
 	break;
       }
@@ -238,13 +257,15 @@ int  main(int argc, char** argv) {
 
     /* print the respponse informations*/
     cout << "Response code " << hdr.code() << ", reason: '" << hdr.reason() << "'" << endl;
-    cout << "List of headers (length: " << hdr.length() << "):" << endl;
-    helper::vstring hkeys = hdr.keys();
-    for(helper::vstring::const_iterator it = hkeys.begin(); it != hkeys.end(); ++it) {
-      string key = (*it);
-      helper::vstring values = hdr.get(key);
-      for(helper::vstring::const_iterator jt = values.begin(); jt != values.end(); ++jt) {
-	cout << " - " << key << ": " << (*jt) << endl;
+    if(print_hdr) {
+      cout << "List of headers (length: " << hdr.length() << "):" << endl;
+      helper::vstring hkeys = hdr.keys();
+      for(helper::vstring::const_iterator it = hkeys.begin(); it != hkeys.end(); ++it) {
+	string key = (*it);
+	helper::vstring values = hdr.get(key);
+	for(helper::vstring::const_iterator jt = values.begin(); jt != values.end(); ++jt) {
+	  cout << " - " << key << ": " << (*jt) << endl;
+	}
       }
     }
     cout << "Body length:" << plain.length() << endl;
