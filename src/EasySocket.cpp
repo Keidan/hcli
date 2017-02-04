@@ -187,7 +187,7 @@ namespace net {
   auto EasySocket::write(const std::string toWrite) -> void {
     if(_useSSL) {
       for (;;) {
-	int rc1 = SSL_write(_ssl, toWrite.c_str(), toWrite.length());
+	int rc1 = SSL_write(_ssl, toWrite.c_str(), toWrite.size());
 	int rc2 = SSL_get_error(_ssl, rc1);
 	switch (rc2) {
 	  case SSL_ERROR_NONE:
@@ -204,7 +204,7 @@ namespace net {
       }
     }
     else {
-      int w = ::write(_fd, toWrite.c_str(), toWrite.length());
+      int w = ::write(_fd, toWrite.c_str(), toWrite.size());
       if(w < 0)
 	throw_libc("Write error (" + std::to_string(w) + "): ");
     }
