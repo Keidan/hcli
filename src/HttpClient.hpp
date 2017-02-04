@@ -1,6 +1,6 @@
 /**
 *******************************************************************************
-* <p><b>Project hcli</b><br/>
+* <p><b>Project httpu</b><br/>
 * </p>
 * @author Keidan
 *
@@ -44,6 +44,8 @@ namespace net {
 	 * @param isform Is form url encoded.
 	 * @param print_query Print the query.
 	 * @param print_chunk Print the chunk info.
+	 * @param print_raw_resp Print the whole response.
+	 * @param print_hex Prints the response in hex format
 	 */
 	std::string host;
 	std::string method;
@@ -58,6 +60,9 @@ namespace net {
 	bool isform;
 	bool print_query;
 	bool print_chunk;
+	bool print_raw_resp;
+	bool print_nothing;
+	bool print_hex;
     };
 
     class HttpClient {
@@ -100,26 +105,19 @@ namespace net {
 	std::string _plain;
 	HttpClientConnect _connect;
 
-
-	/**
-	 * @brief Deflate plain data in GZIP.
-	 * @param toDeflate To deflate.
-	 * @return The deflated data.
-	 */
-	static auto deflate(const std::string toDeflate) -> std::string;
-
-	/**
-	 * @brief Inflate GZIP data in plain text.
-	 * @param toInflate inflate.
-	 * @return The inflated data.
-	 */
-	static auto inflate(const std::string toInflate) -> std::string;
-
 	/**
 	 * @brief Build the query request.
 	 * @return The query.
 	 */
 	auto makeQuery() -> std::string;
+
+	/**
+	 * @brief Build the content type header.
+	 * @param content The query contain content.
+	 * @param isGet Is get method?
+	 * @return The content type.
+	 */
+	auto makeContentType(bool content, bool isGET) -> std::string;
     };
 
   } /* namespace http */

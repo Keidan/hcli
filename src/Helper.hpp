@@ -1,6 +1,6 @@
 /**
 *******************************************************************************
-* <p><b>Project hcli</b><br/>
+* <p><b>Project httpu</b><br/>
 * </p>
 * @author Keidan
 *
@@ -19,9 +19,16 @@
 #include <iterator>
 
 #include <iostream>
+#include <cstdio>
+#include <cstring>
+
 namespace helper {
 
   using vstring = std::vector<std::string>;
+
+  constexpr double SIZE_1KB = 0x400;
+  constexpr double SIZE_1MB = 0x100000;
+  constexpr double SIZE_1GB = 0x40000000;
 
   class Helper {
     public:
@@ -99,6 +106,68 @@ namespace helper {
 
       static auto fromCharVector(std::vector<char> data) -> std::string {
 	return std::string(data.begin(), data.end());
+      }
+
+      template<typename T>
+      static std::string int_to_hex(T i) {
+	std::stringstream stream;
+	stream << std::setfill ('0') << std::setw(sizeof(T)*2) 
+	       << std::hex << (unsigned int)i;
+	return stream.str();
+      }
+
+      static auto print_hex(unsigned char* buffer, int len, bool print_raw = false) -> std::string {
+	std::ostringstream oss;
+	int i = 0, max = 16, loop = len;
+	unsigned char *p = buffer;
+	char line [max + 3]; /* spaces + \0 */
+	memset(line, 0, sizeof(line));
+	while(loop--) {
+	  unsigned char c = *(p++);
+	  if(!print_raw) {
+	    oss << int_to_hex(c) << " ";
+	    /* only the visibles char */
+	    if(c >= 0x20 && c <= 0x7e) line[i] = c;
+	    /* else mask with '.' */
+	    else line[i] = 0x2e; /* . */
+	  } else oss << int_to_hex(c);
+	  
+	  /* next line */
+	  if(i == max) {
+	    if(!print_raw) oss << "  " << line << "\n";
+	    else oss << "\n";
+	    /* re init */
+	    i = 0;
+	    memset(line, 0, sizeof(line));
+	  }
+	  /* next */
+	  else i++;
+	  /* add a space in the midline */
+	  if(i == max / 2 && !print_raw) {
+	    oss << " ";
+	    line[i++] = 0x20;
+	  }
+	}
+	/* align 'line'*/
+	if(i != 0 && (i <= max || i <= len) && !print_raw) {
+	  while(i++ <= max) oss << "   "; /* 3 spaces ex: "00 " */
+	  oss << line;
+	}
+	return oss.str();
+      }
+
+      static auto toHumanStringSize(std::size_t size) -> std::string {
+	std::ostringstream sf;
+	double d = static_cast<double>(size);
+	if(size < 1000)
+	  sf << size << " byte" << (size ? "s" : "");
+	else if(size < 1000000)
+	  sf << std::setprecision(2) << (d/SIZE_1KB) << " Kb";
+	else if(size < 1000000000)
+	  sf << std::setprecision(2) << (d/SIZE_1MB) << " Mb";
+	else
+	  sf << std::setprecision(2) << (d/SIZE_1GB) << " Gb";
+	return sf.str();
       }
       
   };

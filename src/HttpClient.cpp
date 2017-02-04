@@ -1,6 +1,6 @@
 /**
 *******************************************************************************
-* <p><b>Project hcli</b><br/>
+* <p><b>Project httpu</b><br/>
 * </p>
 * @author Keidan
 *
@@ -15,7 +15,7 @@
 #include <map>
 #include <vector>
 #include "Helper.hpp"
-#include <zlib.h>
+#include "GZIP.hpp"
 
 namespace net {
   namespace http {
@@ -31,10 +31,18 @@ namespace net {
     using net::EasySocket;
     using net::http::HttpHeader;
     using helper::Helper;
+    using utils::GZIP;
+    using utils::GZIPMethod;
 
     constexpr size_t windowBits = 15;
     constexpr size_t GZIP_ENCODING = 16;
     constexpr size_t CHUNK = 1024;
+
+
+    #define addDefaultHeader(oss, name, value) do {			\
+      if(_connect.headers.find(name) == _connect.headers.end())		\
+	oss << name << ": " << value << "\r\n";				\
+    } while(0)
 
     HttpClient::HttpClient(const string& appname) : _appname(appname), _socket(), 
 						     _port(80), _page("/"), 
@@ -45,84 +53,27 @@ namespace net {
     }
 
     /**
-     * @brief Deflate plain data in GZIP.
-     * @param toDeflate To deflate.
-     * @return The deflated data.
-     */
-    auto HttpClient::deflate(const string toDeflate) -> string {
-      z_stream strm;
-      strm.zalloc = Z_NULL;
-      strm.zfree  = Z_NULL;
-      strm.opaque = Z_NULL;
-      if(::deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
-			       windowBits | GZIP_ENCODING, 8,
-		       Z_DEFAULT_STRATEGY) < 0) {
-	throw HttpClientException("Unable to load deflateInit2!");
-      }
-      strm.next_in = (unsigned char *) toDeflate.c_str();
-      strm.avail_in = toDeflate.length();
-      string out("");
-      unsigned char buffer[CHUNK];
-      do {
-	bzero(buffer, CHUNK);
-        strm.avail_out = CHUNK - 1;
-        strm.next_out = buffer;
-	int r;
-        if((r = ::deflate (&strm, Z_FINISH)) < 0) {
-	  throw HttpClientException("deflate error " + std::to_string(r));
-	}
-	out += string((char*)buffer);
-      }
-      while (strm.avail_out == 0);
-      ::deflateEnd(&strm);
-      return out;
-    }
-
-    /**
-     * @brief Inflate GZIP data in plain text.
-     * @param toInflate inflate.
-     * @return The inflated data.
-     */
-    auto HttpClient::inflate(const string toInflate) -> string {
-      const int buffersize = 16384;
-      Bytef buffer[buffersize];
-      std::string out("");
-      z_stream cmpr_stream;
-      cmpr_stream.next_in = (unsigned char *)toInflate.c_str();
-      cmpr_stream.avail_in = toInflate.size();
-      cmpr_stream.total_in = 0;
-      cmpr_stream.next_out = buffer;
-      cmpr_stream.avail_out = buffersize;
-      cmpr_stream.total_out = 0;
-      cmpr_stream.zalloc = Z_NULL;
-      cmpr_stream.zalloc = Z_NULL;
-      if(::inflateInit2(&cmpr_stream, -8 ) != Z_OK) {
-	throw HttpClientException("Unable to load inflateInit2!");
-      }
-      do {
-	int status = ::inflate( &cmpr_stream, Z_SYNC_FLUSH );
-
-	if(status == Z_OK || status == Z_STREAM_END) {
-	  out.append((char *)buffer, buffersize - cmpr_stream.avail_out);
-	  cmpr_stream.next_out = buffer;
-	  cmpr_stream.avail_out = buffersize;
-	} else {
-	  ::inflateEnd(&cmpr_stream);
-	}
-
-	if(status == Z_STREAM_END) {
-	  ::inflateEnd(&cmpr_stream);
-	  break;
-	}
-      }while(cmpr_stream.avail_out == 0);
-      return out;
-    }
-
-    /**
      * @brief Test if the SSL is set.
      */
     auto HttpClient::ssl() -> bool {
       return _socket.ssl();
+    }
+    /**
+     * @brief Build the content type header.
+     * @param content The query contain content.
+     * @param isGet Is get method?
+     * @return The content type.
+     */
+    auto HttpClient::makeContentType(bool content, bool isGET) -> std::string {
+      std::ostringstream oss;
+      if(_connect.isform)
+	addDefaultHeader(oss, "Content-Type", "application/x-www-form-urlencoded");
+      else if(_connect.gzip)
+	addDefaultHeader(oss, "Content-Type", "application/javascript");
+      else if(content && !isGET) {
+	addDefaultHeader(oss, "Content-Type", "text/html");
+      }
+      return oss.str();
     }
  
     /**
@@ -133,42 +84,56 @@ namespace net {
       bool isGET = (_connect.method == "GET");
       string h = _connect.host;
       string content =  Helper::fromCharVector(_content);
+      bool deflate = false;
+      bool gzip = false;
       // if(h.back() != '/') h += "/";
-      string output = _connect.method + " " + Helper::http_label(_socket.ssl()) + h +  _page;
-      if(isGET) output += _connect.urlencode ? Helper::urlEncode(content) : content;
-      output += " HTTP/1.1\r\n";
-      if(_connect.headers.find("Host") == _connect.headers.end())
-	output += "Host: " + h + (_port != 80 ? ":"+std::to_string(_port) : "") + "\r\n";
-      if(_connect.headers.find("User-Agent") == _connect.headers.end())
-	output += "User-Agent: " + _appname + "\r\n";
-      if(_connect.headers.find("Accept") == _connect.headers.end())
-	output += "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n";
-      if(_connect.headers.find("Accept-Language") == _connect.headers.end())
-	output += "Accept-Language: q=0.8,en-US;q=0.5,en;q=0.3\r\n";
+      std::ostringstream oss;
+      oss << _connect.method << " " << Helper::http_label(_socket.ssl()) << h <<  _page;
+      if(isGET) oss << _connect.urlencode ? Helper::urlEncode(content) : content;
+      oss << " HTTP/1.1\r\n";
+      addDefaultHeader(oss, "Host",  h + (_port != 80 ? ":"+std::to_string(_port) : ""));
+      addDefaultHeader(oss, "User-Agent", _appname);
+      addDefaultHeader(oss, "Accept", "application/json,text/javascript,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+      addDefaultHeader(oss, "Accept-Language", "q=0.8,en-US;q=0.5,en;q=0.3");
       for(map<string, string>::const_iterator it = _connect.headers.begin(); it != _connect.headers.end(); ++it) {
-	output += it->first + ": " + it->second + "\r\n";
-	if(it->first == "Accept-Encoding" && it->second.find("gzip") != string::npos && !_connect.gzip)
-	  _connect.gzip = true;
+	oss << it->first << ": " << it->second << "\r\n";
+        if(it->first == "Accept-Encoding") {
+          gzip = (it->second.find("gzip") != string::npos);
+          deflate = (it->second.find("deflate") != string::npos);
+        }
       }
+      if(_connect.gzip && !deflate && !gzip)
+        gzip = true;
+      
       for(vector<string>::const_iterator it = _connect.cookies.begin(); it != _connect.cookies.end(); ++it)
-	output += "Cookie: " + (*it) + "\r\n";
-      if(_connect.gzip && _connect.headers.find("Accept-Encoding") == _connect.headers.end())
-	output += "Accept-Encoding: gzip, deflate\r\n";
-      if(!content.empty() && !isGET) {
-	string sp = content;
-	if(_connect.headers.find("Content-Type") == _connect.headers.end())
-	  output += "Content-Type: " + std::string(_connect.isform ? "application/x-www-form-urlencoded" :  "text/html") + "\r\n";
-	if(_connect.headers.find("Content-Length") == _connect.headers.end())
-	  output += "Content-Length: " + std::to_string(sp.length() + 2) + "\r\n";
-      };
-      if(_connect.headers.find("Connection") == _connect.headers.end())
-	output += "Connection: close\r\n\r\n";
+	oss << "Cookie: " << (*it) << "\r\n";
+
+      oss << makeContentType(!content.empty(), isGET); 
+
+      string body;
+      if(gzip)
+        body = GZIP::compress(content, GZIPMethod::GZ);
+      else if(deflate)
+        body = GZIP::compress(content, GZIPMethod::DEFLATE);
+      else if(_connect.urlencode) {
+        body = Helper::urlEncode(content, _connect.uexcept);
+      }
+      else 
+        body = content;
+      if(gzip || deflate) {
+	addDefaultHeader(oss, "Accept-Encoding", "gzip, deflate");
+	if(!content.empty() && !isGET)
+	  addDefaultHeader(oss, "Content-Encoding", std::string(gzip ? "gzip" : "deflate"));
+      }
+      if(!content.empty() && !isGET)
+	addDefaultHeader(oss, "Content-Length", std::to_string(body.length()));
+      addDefaultHeader(oss, "Connection", "close\r\n");
 
       if(!content.empty() && !isGET)
-	output += (_connect.gzip ? deflate(content) : (_connect.urlencode ? Helper::urlEncode(content, _connect.uexcept) : content));
+	oss << body;
       else
-	output += "\r\n";
-      return output;
+	oss << "\r\n";
+      return oss.str();
     }
 
     /**
@@ -215,12 +180,14 @@ namespace net {
       }
       string content = Helper::fromCharVector(_content);
       cout << "Use location: " << Helper::http_label(_connect.ssl) << _connect.host << (isGET && !_content.empty() ? content : "") << endl; 
-      cout << "Query " << _connect.method << " " << Helper::http_label(_connect.ssl) << _connect.host << _page << (_content.empty() ? "" : " whith content " + content) << endl;
+      cout << "Query " << _connect.method << " " << Helper::http_label(_connect.ssl) << _connect.host << _page << endl;
+      if(!_content.empty()) cout << "Whith content " << Helper::toHumanStringSize(content.size()) << endl;
+      /* establishes a connection with the remote host */
       _socket.connect(_connect.host, _port);
       /* Send the request */
       string output = makeQuery();
       if(_connect.print_query)
-	cout << "Query: " << endl << output << endl << endl;
+	cout << "Query: " << endl << "***" << endl << output << endl << "***" << endl;
       _socket << output;
       cout << "Wait for response ..." << endl;
       /* wait a second for processing. */
@@ -231,15 +198,21 @@ namespace net {
 	/* store the response and build headers list */
 	string readdata;
 	_socket >> readdata;
-	if(readdata.empty()) break;
+        if(readdata.empty()) break;
 	if(!_hdr.done()) _hdr.append(readdata);
 	oss << readdata;
-	//cout << "==" << readdata <<"=="<< endl << endl;
+	if(_connect.print_raw_resp)
+	  cout << readdata << endl;
+        if(_connect.print_hex) {
+          cout << Helper::print_hex((unsigned char*)readdata.c_str(), readdata.size());
+          cout << "\n";
+        }
       }
-      string readdata = oss.str().substr(_hdr.length());
+      string str = oss.str();     
+      string readdata = str.substr(_hdr.length());
       readdata = readdata.substr(0, readdata.length() - 2);
 
-      //cout << "==" << readdata <<"=="<< endl << endl;
+      // cout << "==" << readdata <<"==" << readdata.size()<< endl << endl;
       /* Test if the body response is chuncked */
       oss.str("");
       if(_hdr.equals("Transfer-Encoding", "chunked")) {
@@ -260,24 +233,35 @@ namespace net {
 	    ss << std::hex << v;
 	    ss >> chunk;
 	    if(_connect.print_chunk)
-	      cout << (++count) << " chunk bloc size " << chunk << " (0x" << v << ")" << endl;
+	      cout << (++count) << " chunk bloc size " << chunk << " (0x" << v << ") - " << Helper::toHumanStringSize(chunk) << endl;
 	    readdata = readdata.substr(found + 2);
-	    if(!_connect.gzip) {
+            if(chunk > readdata.size()) {
+              std::ostringstream er;
+              er << "Invalid chunk size " << Helper::toHumanStringSize(chunk) << ", but the response length is " << Helper::toHumanStringSize(readdata.size());
+              throw HttpClientException(er.str());
+            }
+            //if(!_connect.gzip) {
+
+    cout << "chunk " << chunk << endl;
 	      oss << readdata.substr(0, chunk);
 	      readdata = readdata.substr(chunk);
-	    } else {
-	      readdata = readdata.substr(0, readdata.size() - 3);
-	      oss << readdata;
-	    }
+//   } else {
+//	      readdata = readdata.substr(0, readdata.size() - 3);
+//	      oss << readdata;
+//	    }
 	  }
-	} while(chunk && !_connect.gzip);
+	} while(chunk);
       } else
 	oss << readdata;
+      cout << "==" << readdata <<"==" << readdata.size()<< endl << endl;
       /* test support of gzip content */
       _plain = oss.str();
       if(_hdr.equals("Content-Encoding", "gzip")) {
 	string t = _plain;
-	_plain = inflate(t);
+        _plain = GZIP::decompress(t, GZIPMethod::GZ);
+      } else if(_hdr.equals("Content-Encoding", "deflate")) {
+	string t = _plain;
+        _plain = GZIP::decompress(t, GZIPMethod::DEFLATE);
       }
     }
 

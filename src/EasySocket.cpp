@@ -1,6 +1,6 @@
 /**
 *******************************************************************************
-* <p><b>Project hcli</b><br/>
+* <p><b>Project httpu</b><br/>
 * </p>
 * @author Keidan
 *
@@ -19,20 +19,21 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <iostream>
+#include <sstream>
 
-#define throw_libc(m) do {				\
-    std::string msg = m;				\
-    msg += "[[" + std::to_string(__LINE__) + "]] ";	\
-    msg += strerror(errno);				\
-    throw EasySocketException(msg);			\
+#define throw_libc(m) do {						\
+    std::ostringstream oss;						\
+    oss << "[[" << __LINE__ << "]] ";					\
+    oss << strerror(errno);						\
+    throw EasySocketException(oss.str());				\
   } while(0)
 
 #define throw_ssl0(m, i) do {				\
-    std::string msg = m;				\
-    msg += "[[" + std::to_string(__LINE__) + "]] ";	\
-    _lib_ssl_errno = i;					\
-    msg += lastErrorSSL();				\
-    throw EasySocketException(msg);			\
+    std::ostringstream oss;						\
+    oss << "[[" << __LINE__ << "]] ";					\
+    _lib_ssl_errno = i;							\
+    oss << lastErrorSSL();						\
+    throw EasySocketException(oss.str());				\
   } while(0)
 #define throw_ssl(m) throw_ssl0(m, ERR_get_error())
 

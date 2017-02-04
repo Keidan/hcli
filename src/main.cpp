@@ -1,13 +1,12 @@
 /**
  *******************************************************************************
- * <p><b>Project hcli</b><br/>
+ * <p><b>Project httpu</b><br/>
  * </p>
  * @author Keidan
  *
  *******************************************************************************
  */
 #include <iostream>
-#include <cstdio>
 #include <signal.h>
 #include <cstring>
 #include <errno.h>
@@ -75,7 +74,13 @@ auto usage(int err) -> void {
   cout << "--host www.ralala.fr:8443 -s (use port 8443 and page /)" << endl;
   cout << "--host www.ralala.fr:8080/login (use port 8080 and page /login)" << endl;
   cout << "\t--help, -h: Print this help." << endl;
-  cout << "\t--verbose -v: Verbose mode, possible values all|query|chunk|resp_hdr (use '|' to combine)." << endl;
+  cout << "\t--verbose -v: Verbose mode, possible values all|query|chunk|rhex|rhdr|rraw (use '|' to combine)." << endl;
+  cout << "\t\tall: Full verbose mode." << endl;
+  cout << "\t\tquery: Prints the query used to contact the remote host." << endl;
+  cout << "\t\tchunk: Prints the chunk information (if available) of the server response." << endl;
+  cout << "\t\trhdr: Prints the response headers (and cookies)." << endl;
+  cout << "\t\trraw: Prints the whole response." << endl;
+  cout << "\t\trhex: Prints the response in hex format." << endl;
   cout << "\t--host: Host address." << endl;
   cout << "\t--ssl, -s: Use SSL." << endl;
   cout << "\t--gzip, -g: Use Accept-Encoding: gzip." << endl;
@@ -91,44 +96,6 @@ auto usage(int err) -> void {
   exit(err);
 }
 
-void print_hex(FILE* std, unsigned char* buffer, int len, bool print_raw) {
-  int i = 0, max = 16, loop = len;
-  unsigned char *p = buffer;
-  char line [max + 3]; /* spaces + \0 */
-  memset(line, 0, sizeof(line));
-  while(loop--) {
-    unsigned char c = *(p++);
-    if(!print_raw) {
-      fprintf(std, "%02x ", c);
-      /* only the visibles char */
-      if(c >= 0x20 && c <= 0x7e) line[i] = c;
-      /* else mask with '.' */
-      else line[i] = 0x2e; /* . */
-    } else fprintf(std, "%02x", c);
-    /* next line */
-    if(i == max) {
-      if(!print_raw)
-	fprintf(std, "  %s\n", line);
-      else fprintf(std, "\n");
-      /* re init */
-      i = 0;
-      memset(line, 0, sizeof(line));
-    }
-    /* next */
-    else i++;
-    /* add a space in the midline */
-    if(i == max / 2 && !print_raw) {
-      fprintf(std, " ");
-      line[i++] = 0x20;
-    }
-  }
-  /* align 'line'*/
-  if(i != 0 && (i < max || i <= len) && !print_raw) {
-    while(i++ <= max) fprintf(std, "   "); /* 3 spaces ex: "00 " */
-    fprintf(std, "%s\n", line);
-  }
-  fprintf(std, "\n");
-}
 
 auto readFile(const char* filename) -> string {
   ifstream ifs(filename);
@@ -151,8 +118,9 @@ int  main(int argc, char** argv) {
   bool print_hdr = false;
   cnx.method = "GET";
   cnx.host = cnx.uexcept = "";
-  cnx.gzip = cnx.ssl = cnx.urlencode = cnx.isform = cnx.print_query = cnx.print_chunk = false;
+  cnx.gzip = cnx.ssl = cnx.urlencode = cnx.isform = cnx.print_query = cnx.print_hex = cnx.print_chunk = false;
   cnx.is_params = &is_params;
+  cnx.print_nothing = false;
 
   memset(&sa, 0, sizeof(struct sigaction));
   sa.sa_handler = &signal_hook;
@@ -173,12 +141,22 @@ int  main(int argc, char** argv) {
 	  std::transform(v.begin(), v.end(), v.begin(), ::toupper); 
 	  if(v == "ALL")
 	    print_hdr = cnx.print_query = cnx.print_chunk = true;
-	  else if(v == "RESP_HDR")
+	  else if(v == "RHDR")
 	    print_hdr = true;
 	  else if(v == "CHUNK")
 	    cnx.print_chunk = true;
 	  else if(v == "QUERY")
 	    cnx.print_query = true;
+	  else if(v == "RRAW")
+	    cnx.print_raw_resp = true;
+	  else if(v == "RHEX")
+	    cnx.print_hex = true;
+	  else if(v == "NOTHING")
+	    cnx.print_nothing = true;
+	  else {
+	    cerr << "Invalid verbose opton: " << optarg << endl;
+	    usage(1);
+	  }
 	}
 	break;
       }
@@ -253,12 +231,11 @@ int  main(int argc, char** argv) {
  
     /* test support of gzip content */
     string& plain = client.getPlainText();
-    //print_hex(stdout, (unsigned char*)plain.c_str(), plain.length(), true);
 
     /* print the respponse informations*/
     cout << "Response code " << hdr.code() << ", reason: '" << hdr.reason() << "'" << endl;
     if(print_hdr) {
-      cout << "List of headers (length: " << hdr.length() << "):" << endl;
+      cout << "List of headers (length: " << Helper::toHumanStringSize(hdr.length()) << "):" << endl;
       helper::vstring hkeys = hdr.keys();
       for(helper::vstring::const_iterator it = hkeys.begin(); it != hkeys.end(); ++it) {
 	string key = (*it);
@@ -268,10 +245,10 @@ int  main(int argc, char** argv) {
 	}
       }
     }
-    cout << "Body length:" << plain.length() << endl;
+    cout << "Body length:" << Helper::toHumanStringSize(plain.length()) << endl;
     if(!plain.empty())
       cout << "=====" << plain << "=====" << endl;
-    //print_hex(stdout, (unsigned char*)plain.c_str(), plain.length(), true);
+   
     //cout << endl << endl;
   } catch (std::exception& e)  {
     cerr << e.what() << endl;
