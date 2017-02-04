@@ -52,6 +52,8 @@ static const struct option long_options[] = {
     { "urlencode"   , 0, NULL, '6' },
     { "uexcept"     , 1, NULL, '7' },
     { "form"        , 0, NULL, '8' },
+    { "multipart"   , 1, NULL, '9' },
+    { "multiparts"  , 1, NULL, 'A' },
     { NULL          , 0, NULL,  0  } 
 };
 
@@ -93,6 +95,8 @@ auto usage(int err) -> void {
   cout << "\t--form: A file with the content to use as body request (unavailable with GET method)." << endl;
   cout << "\t--urlencode: URL encode the params." << endl;
   cout << "\t--uexcept: The list of characters that are not encoded in URL format." << endl;
+  cout << "\t--multipart: Add new header to the query multipart(format key=value)." << endl;
+  cout << "\t--multiparts: A file with the headers." << endl;
   exit(err);
 }
 
@@ -130,7 +134,7 @@ int  main(int argc, char** argv) {
 
 
   int opt;
-  while ((opt = getopt_long(argc, argv, "hv:0:sm:1:2:3:g4:5:67:8", long_options, NULL)) != -1) {
+  while ((opt = getopt_long(argc, argv, "hv:0:sm:1:2:3:g4:5:67:89:A:", long_options, NULL)) != -1) {
     switch (opt) {
       case 'h': usage(0); break;
       case 'v': {
@@ -204,12 +208,38 @@ int  main(int argc, char** argv) {
 	  vstring _vs = Helper::split(line, '=');
 	  if(_vs.size() == 2)
 	    cnx.headers[_vs[0]] = _vs[1];
+	  else if(_vs.size() > 2)
+	    cnx.headers[_vs[0]] = line.substr(_vs[0].length() + 1);
 	}
 	break;
       }
       case '6': cnx.urlencode = true; break;
       case '7': cnx.uexcept = string(optarg); break;
       case '8': cnx.isform = true; break;
+      case '9': { /* multipart */
+	string s(optarg);
+	size_t found = s.find("=");
+	if(found == string::npos) {
+	  cerr << "Invalid header format (key=value): " << optarg << endl;
+	  exit(1);
+	}
+	cnx.multiparts[s.substr(0, found)] = s.substr(found + 1);
+	break;
+      }
+      case 'A': { /* multiparts file */
+	string content = readFile(optarg);
+	vstring vs = Helper::split(content, '\n');
+	for(vstring::iterator it = vs.begin(); it != vs.end(); ++it) {
+	  string line = *it;
+	  if(line.at(0) == '#') continue;
+	  vstring _vs = Helper::split(line, '=');
+	  if(_vs.size() == 2)
+	    cnx.multiparts[_vs[0]] = _vs[1];
+	  else if(_vs.size() > 2)
+	    cnx.multiparts[_vs[0]] = line.substr(_vs[0].length() + 1);
+	}
+	break;
+      }
       default: cerr << "Unknown option" << endl; usage(-1); break;
     }
   }
@@ -245,7 +275,7 @@ int  main(int argc, char** argv) {
 	}
       }
     }
-    cout << "Body length:" << Helper::toHumanStringSize(plain.length()) << endl;
+    cout << "Body length:" << Helper::toHumanStringSize(plain.size()) << endl;
     if(!plain.empty())
       cout << "=====" << plain << "=====" << endl;
    

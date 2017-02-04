@@ -46,12 +46,14 @@ namespace net {
 	 * @param print_chunk Print the chunk info.
 	 * @param print_raw_resp Print the whole response.
 	 * @param print_hex Prints the response in hex format
+	 * @param multiparts Possible user defined headers for multipart.
 	 */
 	std::string host;
 	std::string method;
 	bool ssl;
 	bool gzip;
 	std::map<std::string, std::string> headers;
+	std::map<std::string, std::string> multiparts;
 	std::vector<std::string> cookies;
 	std::map<std::string, std::string> params;
 	std::ifstream *is_params;

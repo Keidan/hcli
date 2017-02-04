@@ -87,7 +87,7 @@ namespace net {
 	  _done = true;
 	  /* only preserve the headers */
 	  s = s.substr(0, found);
-	  _length = s.length() + 4;
+	  _length = s.size() + 4;
 	  /* prepare for header parsing */
 	  vstring tokens = Helper::split(s, '\n');
 	  for(vstring::const_iterator it = tokens.begin(); it != tokens.end(); ++it) {

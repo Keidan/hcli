@@ -37,6 +37,7 @@ namespace net {
     constexpr size_t windowBits = 15;
     constexpr size_t GZIP_ENCODING = 16;
     constexpr size_t CHUNK = 1024;
+    constexpr char boundary[] = "7db2c7420378abc";
 
 
     #define addDefaultHeader(oss, name, value) do {			\
@@ -66,7 +67,9 @@ namespace net {
      */
     auto HttpClient::makeContentType(bool content, bool isGET) -> std::string {
       std::ostringstream oss;
-      if(_connect.isform)
+      if(!_connect.multiparts.empty())
+        addDefaultHeader(oss, "Content-Type", "multipart/form-data; boundary=---------------------------" << boundary);      
+      else if(_connect.isform)
 	addDefaultHeader(oss, "Content-Type", "application/x-www-form-urlencoded");
       else if(_connect.gzip)
 	addDefaultHeader(oss, "Content-Type", "application/javascript");
@@ -109,7 +112,6 @@ namespace net {
 	oss << "Cookie: " << (*it) << "\r\n";
 
       oss << makeContentType(!content.empty(), isGET); 
-
       string body;
       if(gzip)
         body = GZIP::compress(content, GZIPMethod::GZ);
@@ -120,19 +122,34 @@ namespace net {
       }
       else 
         body = content;
+
+      std::ostringstream oss_boundary;
+      oss_boundary.str("");
+      if(!_connect.multiparts.empty()) {
+        oss_boundary << "-----------------------------" << boundary << "\r\n";
+        for(map<string, string>::const_iterator it = _connect.multiparts.begin(); it != _connect.multiparts.end(); ++it)
+          oss_boundary << it->first << ": " << it->second << "\r\n";
+        oss_boundary << "\r\n";
+        oss_boundary << body << "\r\n";
+        oss_boundary << "-----------------------------" << boundary << "--\r\n\r\n";
+      }
+
+
       if(gzip || deflate) {
 	addDefaultHeader(oss, "Accept-Encoding", "gzip, deflate");
 	if(!content.empty() && !isGET)
 	  addDefaultHeader(oss, "Content-Encoding", std::string(gzip ? "gzip" : "deflate"));
       }
       if(!content.empty() && !isGET)
-	addDefaultHeader(oss, "Content-Length", std::to_string(body.length()));
+	addDefaultHeader(oss, "Content-Length", std::to_string(body.size()));
       addDefaultHeader(oss, "Connection", "close\r\n");
-
-      if(!content.empty() && !isGET)
-	oss << body;
-      else
-	oss << "\r\n";
+      if(!_connect.multiparts.empty()) oss << oss_boundary.str();
+      else {
+        if(!content.empty() && !isGET)
+	  oss << body;
+	else
+	  oss << "\r\n";
+      }
       return oss.str();
     }
 
@@ -174,7 +191,7 @@ namespace net {
 	  s = isGET ? "?" : "";
 	  for(map<string, string>::const_iterator it = _connect.params.begin(); it != _connect.params.end(); ++it)
 	    s += it->first + "=" + it->second + "&";
-	  if(s.at(s.length() - 1) == '&') s.erase(s.size() - 1);
+	  if(s.at(s.size() - 1) == '&') s.erase(s.size() - 1);
 	  _content = Helper::toCharVector(s);
 	}
       }
@@ -210,7 +227,7 @@ namespace net {
       }
       string str = oss.str();     
       string readdata = str.substr(_hdr.length());
-      readdata = readdata.substr(0, readdata.length() - 2);
+      readdata = readdata.substr(0, readdata.size() - 2);
 
       // cout << "==" << readdata <<"==" << readdata.size()<< endl << endl;
       /* Test if the body response is chuncked */
@@ -242,7 +259,6 @@ namespace net {
             }
             //if(!_connect.gzip) {
 
-    cout << "chunk " << chunk << endl;
 	      oss << readdata.substr(0, chunk);
 	      readdata = readdata.substr(chunk);
 //   } else {
