@@ -132,9 +132,9 @@ namespace net {
           ss_boundary << it->first << ": " << it->second << "\r\n";
         ss_boundary << "\r\n";
         ss_boundary << body << "\r\n";
-        ss_boundary << "-----------------------------" << _boundary << "--\r\n\r\n";
-        ss_boundary.seekg(0, std::ios::end);
-        extra_length = ss_boundary.tellg();
+        std::string footer = "-----------------------------" + _boundary + "--\r\n\r\n";
+        ss_boundary << footer;
+        extra_length = footer.size() + 2;
       }
 
 
@@ -272,7 +272,6 @@ namespace net {
 	} while(chunk);
       } else
 	oss << readdata;
-      cout << "==" << readdata <<"==" << readdata.size()<< endl << endl;
       /* test support of gzip content */
       _plain = oss.str();
       if(_hdr.equals("Content-Encoding", "gzip")) {
