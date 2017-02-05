@@ -37,7 +37,6 @@ namespace net {
     constexpr size_t windowBits = 15;
     constexpr size_t GZIP_ENCODING = 16;
     constexpr size_t CHUNK = 1024;
-    constexpr char boundary[] = "7db2c7420378abc";
 
 
     #define addDefaultHeader(oss, name, value) do {			\
@@ -47,7 +46,8 @@ namespace net {
 
     HttpClient::HttpClient(const string& appname) : _appname(appname), _socket(), 
 						     _port(80), _page("/"), 
-						    _content(), _hdr(), _plain(""), _connect() {
+                                                     _content(), _hdr(), _plain(""), _connect(), 
+                                                     _boundary(Helper::generateHexString(16)) {
     }
     HttpClient::~HttpClient() {
       _socket.disconnect();
@@ -68,7 +68,7 @@ namespace net {
     auto HttpClient::makeContentType(bool content, bool isGET) -> std::string {
       std::ostringstream oss;
       if(!_connect.multiparts.empty())
-        addDefaultHeader(oss, "Content-Type", "multipart/form-data; boundary=---------------------------" << boundary);      
+        addDefaultHeader(oss, "Content-Type", "multipart/form-data; boundary=---------------------------" << _boundary);      
       else if(_connect.isform)
 	addDefaultHeader(oss, "Content-Type", "application/x-www-form-urlencoded");
       else if(_connect.gzip)
@@ -123,15 +123,18 @@ namespace net {
       else 
         body = content;
 
-      std::ostringstream oss_boundary;
-      oss_boundary.str("");
+      std::stringstream ss_boundary;
+      size_t extra_length = 0;
+      ss_boundary.str("");
       if(!_connect.multiparts.empty()) {
-        oss_boundary << "-----------------------------" << boundary << "\r\n";
+        ss_boundary << "-----------------------------" << _boundary << "\r\n";
         for(map<string, string>::const_iterator it = _connect.multiparts.begin(); it != _connect.multiparts.end(); ++it)
-          oss_boundary << it->first << ": " << it->second << "\r\n";
-        oss_boundary << "\r\n";
-        oss_boundary << body << "\r\n";
-        oss_boundary << "-----------------------------" << boundary << "--\r\n\r\n";
+          ss_boundary << it->first << ": " << it->second << "\r\n";
+        ss_boundary << "\r\n";
+        ss_boundary << body << "\r\n";
+        ss_boundary << "-----------------------------" << _boundary << "--\r\n\r\n";
+        ss_boundary.seekg(0, std::ios::end);
+        extra_length = ss_boundary.tellg();
       }
 
 
@@ -141,9 +144,9 @@ namespace net {
 	  addDefaultHeader(oss, "Content-Encoding", std::string(gzip ? "gzip" : "deflate"));
       }
       if(!content.empty() && !isGET)
-	addDefaultHeader(oss, "Content-Length", std::to_string(body.size()));
+	addDefaultHeader(oss, "Content-Length", std::to_string(body.size() + extra_length));
       addDefaultHeader(oss, "Connection", "close\r\n");
-      if(!_connect.multiparts.empty()) oss << oss_boundary.str();
+      if(!_connect.multiparts.empty()) oss << ss_boundary.str();
       else {
         if(!content.empty() && !isGET)
 	  oss << body;
@@ -254,7 +257,7 @@ namespace net {
 	    readdata = readdata.substr(found + 2);
             if(chunk > readdata.size()) {
               std::ostringstream er;
-              er << "Invalid chunk size " << Helper::toHumanStringSize(chunk) << ", but the response length is " << Helper::toHumanStringSize(readdata.size());
+              er << "The chunk size (" << Helper::toHumanStringSize(chunk) << ") is greater than the response length (" << Helper::toHumanStringSize(readdata.size()) << ")";
               throw HttpClientException(er.str());
             }
             //if(!_connect.gzip) {

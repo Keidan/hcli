@@ -20,6 +20,7 @@
 
 #include <iostream>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace helper {
@@ -34,6 +35,20 @@ namespace helper {
     public:
       Helper() = default;
       virtual ~Helper() = default;
+
+      static auto generateHexString(std::size_t size) -> std::string {
+	static bool srand_init = false;
+	static const std::string hexdigit = "0123456789abcdef";
+	std::ostringstream oss;
+	if(!srand_init) {
+	  srand_init = true;
+	  srand(time(NULL));
+	}
+	for(std::size_t i = 0; i < size; ++i)
+	  oss << hexdigit.at(rand() % sizeof hexdigit);
+	oss << '\0';
+	return oss.str();
+      }
 
       /**
        * @brief Split a string into a vector.

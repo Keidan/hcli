@@ -106,6 +106,7 @@ namespace net {
 	HttpHeader _hdr;
 	std::string _plain;
 	HttpClientConnect _connect;
+	std::string _boundary;
 
 	/**
 	 * @brief Build the query request.
