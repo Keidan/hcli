@@ -231,7 +231,7 @@ namespace net {
 	    }
 	  case SSL_ERROR_NONE:
 	  case SSL_ERROR_ZERO_RETURN:
-	    leave = true;
+	    if(rc1 == 0) leave = true;
 	    break;
 	  case SSL_ERROR_WANT_READ:
 	  case SSL_ERROR_WANT_WRITE: {

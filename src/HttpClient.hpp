@@ -36,6 +36,7 @@ namespace net {
 	 * @param ssl Test if we need to use the SSL sockets.
 	 * @param gzip Test if we need to use GZIP contents.
 	 * @param headers Possible user defined headers.
+	 * @param multiparts Possible user defined headers for multipart.
 	 * @param cookies Possible user defined cookies.
 	 * @param params Possible user defined params.
 	 * @param is_params an input stream to the params (if open).
@@ -46,7 +47,6 @@ namespace net {
 	 * @param print_chunk Print the chunk info.
 	 * @param print_raw_resp Print the whole response.
 	 * @param print_hex Prints the response in hex format
-	 * @param multiparts Possible user defined headers for multipart.
 	 */
 	std::string host;
 	std::string method;

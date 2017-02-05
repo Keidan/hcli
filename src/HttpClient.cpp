@@ -106,7 +106,7 @@ namespace net {
         }
       }
       if(_connect.gzip && !deflate && !gzip)
-        gzip = true;
+        deflate = true;
       
       for(vector<string>::const_iterator it = _connect.cookies.begin(); it != _connect.cookies.end(); ++it)
 	oss << "Cookie: " << (*it) << "\r\n";
@@ -255,25 +255,27 @@ namespace net {
 	    if(_connect.print_chunk)
 	      cout << (++count) << " chunk bloc size " << chunk << " (0x" << v << ") - " << Helper::toHumanStringSize(chunk) << endl;
 	    readdata = readdata.substr(found + 2);
-            if(chunk > readdata.size()) {
+            /*if(chunk > readdata.size()) {
               std::ostringstream er;
               er << "The chunk size (" << Helper::toHumanStringSize(chunk) << ") is greater than the response length (" << Helper::toHumanStringSize(readdata.size()) << ")";
               throw HttpClientException(er.str());
-            }
-            //if(!_connect.gzip) {
+	    }*/
+            if(!_connect.gzip) {
 
 	      oss << readdata.substr(0, chunk);
 	      readdata = readdata.substr(chunk);
-//   } else {
-//	      readdata = readdata.substr(0, readdata.size() - 3);
-//	      oss << readdata;
-//	    }
+            } else {
+	      readdata = readdata.substr(0, readdata.size() - 3);
+	      oss << readdata;
+	    }
 	  }
-	} while(chunk);
+	} while(chunk && !_connect.gzip);
       } else
 	oss << readdata;
       /* test support of gzip content */
       _plain = oss.str();
+      //cout << Helper::print_hex((unsigned char*)_plain.c_str(), _plain.size());
+      //cout << "\n";
       if(_hdr.equals("Content-Encoding", "gzip")) {
 	string t = _plain;
         _plain = GZIP::decompress(t, GZIPMethod::GZ);

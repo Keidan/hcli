@@ -25,6 +25,9 @@
 
 namespace helper {
 
+
+  constexpr const char* APPNAME = "httpu";
+
   using vstring = std::vector<std::string>;
 
   constexpr double SIZE_1KB = 0x400;

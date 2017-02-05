@@ -32,8 +32,8 @@ using net::http::HttpClientConnect;
 using net::http::HttpHeader;
 using helper::Helper;
 using helper::vstring;
+using helper::APPNAME;
 
-constexpr const char* APPNAME = "hcli";
 static HttpClient client(APPNAME);
 static std::ifstream is_params;
 
