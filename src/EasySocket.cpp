@@ -219,7 +219,7 @@ namespace net {
     std::ostringstream oss;
     bool leave = false;
     if(_useSSL) {
-      for(;;) {
+      for(;!leave;) {
 	bzero(buffer, 1024);
 	int rc1 = SSL_read(_ssl, buffer, 1023);
 	int rc2 = SSL_get_error(_ssl, rc1);
@@ -243,7 +243,6 @@ namespace net {
 	    break;
 	  }
 	}
-	if(leave) break;
       }
     } else {
       int reads = ::read(_fd, buffer, 1023);
