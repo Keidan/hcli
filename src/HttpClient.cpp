@@ -47,7 +47,7 @@ namespace net {
     HttpClient::HttpClient(const string& appname) : _appname(appname), _socket(), 
 						     _port(80), _page("/"), 
                                                      _content(), _hdr(), _plain(""), _connect(), 
-                                                     _boundary(Helper::generateHexString(16)) {
+                                                     _boundary(_appname + Helper::generateHexString(16)) {
     }
     HttpClient::~HttpClient() {
       _socket.disconnect();
