@@ -245,12 +245,15 @@ namespace net {
 	}
       }
     } else {
-      int reads = ::read(_fd, buffer, 1023);
-      if(reads < 0) {
-	throw_libc("Read error (" + std::to_string(reads) + "): ");
+      for(;;) {
+	bzero(buffer, 1024);
+	int reads = ::read(_fd, buffer, 1023);
+	if(reads == 0) break;
+	if(reads < 0) {
+	  throw_libc("Read error (" + std::to_string(reads) + "): ");
+	}
+	oss << buffer;
       }
-      buffer[reads] = 0;
-      oss << buffer;
     }
     toRead = oss.str();
   }
