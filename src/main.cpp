@@ -275,7 +275,7 @@ int  main(int argc, char** argv) {
 	}
       }
     }
-    cout << "Body length:" << Helper::toHumanStringSize(plain.size()) << endl;
+    cout << "Body length: " << Helper::toHumanStringSize(plain.size()) << endl;
     if(!plain.empty())
       cout << "=====" << plain << "=====" << endl;
    
